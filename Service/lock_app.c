@@ -5,6 +5,7 @@
 #include "stepper_motor.h"
 #include "flash_eeprom.h"
 #include "Fingerprint.h"
+#include "Debug.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -661,12 +662,16 @@ void LockApp_Init(void)
 
     HAL_GPIO_WritePin(GPIOA, Led1_Pin | Led2_Pin, GPIO_PIN_SET);
 
+    uart_printf("LOCK: flash init\r\n");
     FLASH_EEPROM_Init();
+    uart_printf("LOCK: flash ok\r\n");
 
     UI_ShowMain();
     LCD_SetBacklight(1U);
+    uart_printf("LOCK: ui ok\r\n");
 
     FPC_Init(on_fp_event);
+    uart_printf("LOCK: fp init ok\r\n");
     FPC_SetLight(FPC_LIGHT_BLUE_BREATH);
 
     s_last_activity = HAL_GetTick();

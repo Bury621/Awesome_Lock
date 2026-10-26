@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "App.h"
+#include "Debug.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,10 +73,51 @@ static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
-
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/*
+ * 开机打印复位原因，便于定位“自动重启”：
+ *   IWDG  -> 主循环超过约 10s 没喂狗（卡死/被中断饿死）
+ *   POR   -> 正常上电
+ *   PIN   -> 复位脚/下载器复位
+ *   BOR   -> 供电跌落
+ *   SFTRST-> 软件复位
+ */
+static void Report_Reset_Cause(void)
+{
+    uart_printf("\r\n=== BOOT ===\r\n");
 
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET)
+    {
+        uart_printf("RESET: IWDG (main loop stuck / watchdog)\r\n");
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET)
+    {
+        uart_printf("RESET: WWDG\r\n");
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST) != RESET)
+    {
+        uart_printf("RESET: BOR (power dip)\r\n");
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET)
+    {
+        uart_printf("RESET: Software\r\n");
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET)
+    {
+        uart_printf("RESET: Pin / debugger\r\n");
+    }
+    else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET)
+    {
+        uart_printf("RESET: Power-on\r\n");
+    }
+    else
+    {
+        uart_printf("RESET: unknown\r\n");
+    }
+
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+}
 /* USER CODE END 0 */
 
 /**
@@ -122,7 +164,9 @@ int main(void)
     MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 	/* 给指纹模块、键盘等外部器件留出上电稳定时间 */
-	HAL_Delay(300);
+	HAL_Delay(100);
+	Report_Reset_Cause();
+	HAL_Delay(200);
 	App_Init();
   /* USER CODE END 2 */
 
@@ -554,7 +598,11 @@ static void MX_GPIO_Init(void)
     /*Configure GPIO pin : PA0 */
     GPIO_InitStruct.Pin = GPIO_PIN_0;
     GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    /*
+     * 人体感应模块未接时 PA0 会悬空，可能产生大量边沿中断。
+     * 加上下拉，空闲时保持低电平，避免 EXTI0 中断风暴拖死主循环。
+     */
+    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /*Configure GPIO pins : Led1_Pin Led2_Pin */
@@ -624,6 +672,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+  uart_printf("[ERROR_HANDLER]\r\n");
   __disable_irq();
   while (1)
   {

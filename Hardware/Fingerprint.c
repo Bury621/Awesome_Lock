@@ -63,6 +63,11 @@ static bool          s_pending_light_valid;
  */
 static uint32_t s_light_guard_until;
 
+/* 串口错误风暴保护：异常时暂停接收，避免把主循环饿死导致看门狗复位 */
+static uint32_t s_uart_error_window;
+static uint8_t  s_uart_error_count;
+static uint32_t s_uart_resume_tick;
+
 /* -------------------------------------------------------------------------- */
 /* 内部工具                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -476,6 +481,15 @@ void FPC_Init(FPC_EventHandler handler)
     s_pending_light_valid = false;
     s_light_guard_until = 0U;
     s_rx_watchdog_tick = HAL_GetTick();
+    s_uart_error_window = HAL_GetTick();
+    s_uart_error_count = 0U;
+    s_uart_resume_tick = 0U;
+
+    /* 清掉上电期间可能存在的串口错误标志 */
+    __HAL_UART_CLEAR_PEFLAG(&huart5);
+    __HAL_UART_CLEAR_FEFLAG(&huart5);
+    __HAL_UART_CLEAR_NEFLAG(&huart5);
+    __HAL_UART_CLEAR_OREFLAG(&huart5);
 
     HAL_NVIC_SetPriority(UART5_IRQn, 2U, 0U);
     HAL_NVIC_EnableIRQ(UART5_IRQn);
@@ -575,7 +589,8 @@ void FPC_SetLight(FPC_LightMode mode)
 
 void FPC_Poll(void)
 {
-    FPC_Frame frame;
+    /* 放静态区，避免 162 字节的帧结构占用本就很小的主栈 */
+    static FPC_Frame frame;
 
     /* 1. 处理中断收到的完整帧（最多一轮，避免长时间占用主循环） */
     while (fpc_pop_frame(&frame))
@@ -594,7 +609,26 @@ void FPC_Poll(void)
     fpc_try_flush_light();
 
     /* 4. 接收链路自愈：若接收被异常终止则重新挂起 */
-    if ((HAL_GetTick() - s_rx_watchdog_tick) >= 500U)
+    if (s_uart_resume_tick != 0U)
+    {
+        if (App_TimeReached(s_uart_resume_tick))
+        {
+            s_uart_resume_tick = 0U;
+            s_uart_error_count = 0U;
+
+            __HAL_UART_CLEAR_PEFLAG(&huart5);
+            __HAL_UART_CLEAR_FEFLAG(&huart5);
+            __HAL_UART_CLEAR_NEFLAG(&huart5);
+            __HAL_UART_CLEAR_OREFLAG(&huart5);
+
+            HAL_NVIC_EnableIRQ(UART5_IRQn);
+            if (huart5.RxState == HAL_UART_STATE_READY)
+            {
+                (void)HAL_UART_Receive_IT(&huart5, &s_rx_byte, 1U);
+            }
+        }
+    }
+    else if ((HAL_GetTick() - s_rx_watchdog_tick) >= 500U)
     {
         s_rx_watchdog_tick = HAL_GetTick();
         if (huart5.RxState == HAL_UART_STATE_READY)
@@ -620,6 +654,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == UART5)
     {
+        uint32_t now = HAL_GetTick();
+
         __HAL_UART_CLEAR_PEFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
         __HAL_UART_CLEAR_NEFLAG(huart);
@@ -627,6 +663,41 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
         huart->ErrorCode = HAL_UART_ERROR_NONE;
         s_rx_len = 0U;
-        (void)HAL_UART_Receive_IT(&huart5, &s_rx_byte, 1U);
+
+        /*
+         * 如果 RX 悬空/被拉低，可能每秒产生上万次帧错误中断，
+         * 主循环会被彻底饿死（看门狗复位）。这里统计 1 秒内的错误数，
+         * 超过阈值就主动停掉接收 2 秒，给主循环/看门狗留出运行时间。
+         */
+        if ((now - s_uart_error_window) > 1000U)
+        {
+            s_uart_error_window = now;
+            s_uart_error_count = 0U;
+        }
+        if (s_uart_error_count < 0xFFU)
+        {
+            s_uart_error_count++;
+        }
+
+        if (s_uart_error_count >= 20U)
+        {
+            /*
+             * 关闭错误中断和 UART5 NVIC，确保错误风暴立刻停止；
+             * 2 秒后由 FPC_Poll 重新清标志并恢复接收。
+             */
+            __HAL_UART_DISABLE_IT(huart, UART_IT_PE);
+            __HAL_UART_DISABLE_IT(huart, UART_IT_ERR);
+            HAL_NVIC_DisableIRQ(UART5_IRQn);
+            (void)HAL_UART_AbortReceive_IT(&huart5);
+
+            s_uart_error_count = 0U;
+            s_uart_resume_tick = now + 2000U;
+            return;
+        }
+
+        if ((s_uart_resume_tick == 0U) && (huart5.RxState == HAL_UART_STATE_READY))
+        {
+            (void)HAL_UART_Receive_IT(&huart5, &s_rx_byte, 1U);
+        }
     }
 }

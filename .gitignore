@@ -5,7 +5,7 @@
 *.d
 *.crf
 *.htm
-*.dep
+*.dep 
 *.map
 *.lst
 *.axf

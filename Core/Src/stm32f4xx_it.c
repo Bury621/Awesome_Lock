@@ -60,6 +60,7 @@ extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
 extern UART_HandleTypeDef huart5;
+extern UART_HandleTypeDef huart1;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -88,7 +89,10 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
     /* USER CODE BEGIN HardFault_IRQn 0 */
-
+    /* 在死循环前用调试串口留一条线索；USART1 未初始化时 HAL 会立即返回 */
+    static const char hardfault_msg[] = "\r\n[HARDFAULT]\r\n";
+    (void)HAL_UART_Transmit(&huart1, (uint8_t *)hardfault_msg,
+                            (uint16_t)(sizeof(hardfault_msg) - 1U), 50U);
     /* USER CODE END HardFault_IRQn 0 */
     while (1)
     {

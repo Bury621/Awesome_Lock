@@ -56,7 +56,7 @@
 /* -------------------------------------------------------------------------- */
 #define SLEEPING_TIME        10U        /* 主界面无操作自动熄屏时间（秒）        */
 #define SLEEPING_TIME_MS     (SLEEPING_TIME * 1000U)
-#define KEYPAD_DEBOUNCE_MS   25U        /* 按键中断到读取键值的去抖延迟          */
+#define KEYPAD_DEBOUNCE_MS   2U         /* 按键中断到读取键值的延迟（旧版为 0） */
 #define UI_MESSAGE_TIME_MS   1500U      /* 普通提示界面停留时间                  */
 #define UI_RESULT_TIME_MS    2000U      /* 操作结果界面停留时间                  */
 

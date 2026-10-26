@@ -6,7 +6,7 @@
 
 /* 七位右对齐地址 */
 #define KEYBOARD_ADDRESS        0x65U
-#define KEYBOARD_I2C_TIMEOUT_MS 5U
+#define KEYBOARD_I2C_TIMEOUT_MS 50U
 
 extern I2C_HandleTypeDef hi2c1;
 

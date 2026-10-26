@@ -70,5 +70,6 @@ void LCD_DisplayOn(void);
 void LCD_DisplayOff(void);
 void LCD_SetBacklight(uint8_t state);
 uint8_t LCD_GetBacklight(void);
+uint8_t LCD_IsFaulted(void);
 
 #endif /* __LCD_H */
