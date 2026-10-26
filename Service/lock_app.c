@@ -138,6 +138,7 @@ static void enter_input(LockState state, UI_InputMode mode)
 {
     pwd_clear();
     s_state = state;
+    s_last_activity = HAL_GetTick();
     UI_ShowInput(mode, 0U);
 }
 
@@ -146,6 +147,7 @@ static void enter_admin_menu(uint8_t index)
     pwd_clear();
     s_menu_index = index;
     s_state = LOCK_STATE_ADMIN_MENU;
+    s_last_activity = HAL_GetTick();
     UI_ShowMenu(index);
 }
 
@@ -155,6 +157,7 @@ static void show_message(const char *line1, const char *line2, uint16_t color,
     s_state = LOCK_STATE_MESSAGE;
     s_message_return = return_state;
     s_message_deadline = HAL_GetTick() + duration_ms;
+    s_last_activity = HAL_GetTick();
     UI_ShowMessage(line1, line2, color);
 }
 
@@ -180,6 +183,24 @@ static void enter_after_message(void)
         default:
             enter_main();
             break;
+    }
+}
+
+/* 哪些界面允许 5 秒无操作后熄屏 */
+static bool state_allows_sleep(void)
+{
+    switch (s_state)
+    {
+        case LOCK_STATE_MAIN:
+        case LOCK_STATE_INPUT:
+        case LOCK_STATE_ADMIN_CHECK:
+        case LOCK_STATE_ADMIN_MENU:
+        case LOCK_STATE_ADMIN_NEW_PWD:
+            return true;
+
+        default:
+            /* UNLOCKED / LOCKED / 指纹注册等待中不熄屏 */
+            return false;
     }
 }
 
@@ -328,11 +349,19 @@ static void fp_touch(void)
         s_fp_retry_armed = true;
         s_fp_retry_at = now + 200U;
     }
+    else
+    {
+        /* 只有真正发起了指纹验证，才算一次“用户操作” */
+        s_last_activity = now;
+    }
 }
 
 static void on_fp_event(FPC_Op op, FPC_Result result, FGP_Status_Code status)
 {
     uint32_t now = HAL_GetTick();
+
+    uart_printf("FP result op=%u res=%u st=%02X\r\n",
+                (unsigned)op, (unsigned)result, (unsigned)status);
 
     if (op == FPC_OP_VERIFY)
     {
@@ -708,15 +737,19 @@ void LockApp_HandleEvent(const AppEvent *event)
             s_sleeping = false;
             LCD_SetBacklight(1U);
             s_last_activity = now;
+            uart_printf("WAKE\r\n");
             return;
         }
     }
 
-    s_last_activity = now;
-
     switch (event->type)
     {
         case APP_EVENT_KEYPAD:
+            /*
+             * 这里不刷新 s_last_activity：
+             * 只有真正读到有效键值（LockApp_Poll 里）才算用户操作，
+             * 防止键盘 IRQ 受干扰时一直把休眠计时清零。
+             */
             if (!s_keypad_pending)
             {
                 s_keypad_pending = true;
@@ -731,6 +764,10 @@ void LockApp_HandleEvent(const AppEvent *event)
         case APP_EVENT_BODY:
         case APP_EVENT_DOOR_SENSE:
         default:
+            /*
+             * 人体感应/门磁只负责“唤醒”，不在清醒状态下刷新休眠计时，
+             * 否则传感器一直有信号时屏幕永远不会休眠。
+             */
             break;
     }
 }
@@ -771,7 +808,10 @@ void LockApp_Poll(void)
         if (((s_state == LOCK_STATE_MAIN) || (s_state == LOCK_STATE_INPUT)) &&
             (s_fp_fail < FGP_MAX_VERIFY) && !FPC_IsBusy())
         {
-            (void)FPC_StartVerify();
+            if (FPC_StartVerify())
+            {
+                s_last_activity = now;
+            }
         }
     }
 
@@ -854,11 +894,18 @@ void LockApp_Poll(void)
         }
     }
 
-    /* 9. 主界面无操作熄屏 */
-    if ((s_state == LOCK_STATE_MAIN) && !s_sleeping &&
+    /* 9. 无操作熄屏：主界面/密码输入/管理员界面都适用 */
+    if (!s_sleeping && state_allows_sleep() &&
         App_TimeReached(s_last_activity + SLEEPING_TIME_MS))
     {
+        /* 从密码/管理员界面熄屏时，顺手回到主界面，避免半截输入留在屏幕上 */
+        if (s_state != LOCK_STATE_MAIN)
+        {
+            enter_main();
+        }
+
         s_sleeping = true;
         LCD_SetBacklight(0U);
+        uart_printf("SLEEP\r\n");
     }
 }

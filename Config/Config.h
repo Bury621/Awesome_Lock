@@ -50,11 +50,18 @@
 #define FGP_VERIFY_TIMEOUT_MS 3000U     /* 单次指纹验证超时                      */
 #define FGP_ENROLL_TIMEOUT_MS 20000U    /* 指纹注册超时                          */
 #define FGP_CLEAR_TIMEOUT_MS  3000U     /* 清空指纹库超时                        */
+/*
+ * 指纹“匹配成功”的第二个数据字节。
+ * 旧版 FPC_check() 要求 status==0x00 且 data[1]==0x05 才算成功；
+ * 新版重构时漏掉了这个条件，导致任何 status==0 的短确认包都会开门。
+ * 如果实测日志里正确指纹的 data[1] 不是 0x05，只改这里即可。
+ */
+#define FPC_VERIFY_CONFIRM_BYTE 0x05U
 
 /* -------------------------------------------------------------------------- */
 /* 人机交互                                                                    */
 /* -------------------------------------------------------------------------- */
-#define SLEEPING_TIME        10U        /* 主界面无操作自动熄屏时间（秒）        */
+#define SLEEPING_TIME        5U         /* 无操作自动熄屏时间（秒）              */
 #define SLEEPING_TIME_MS     (SLEEPING_TIME * 1000U)
 #define KEYPAD_DEBOUNCE_MS   2U         /* 按键中断到读取键值的延迟（旧版为 0） */
 #define UI_MESSAGE_TIME_MS   1500U      /* 普通提示界面停留时间                  */

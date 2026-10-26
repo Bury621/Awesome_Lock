@@ -30,6 +30,9 @@ void LCD_FlushArea(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 static uint8_t s_backlight_on;
 static uint8_t s_lcd_fault;
 
+/* 批量填充缓冲：最多一整列 160 像素，或一整行 128 像素 */
+static uint8_t s_fill_buffer[LCD_HEIGHT * 2U];
+
 /*
  * 所有 SPI 发送统一走这里。
  * 如果屏幕排线/SPI 异常导致 HAL 返回错误，只标记故障并停发，
@@ -49,6 +52,36 @@ static uint8_t lcd_spi_send(const uint8_t *data, uint16_t length)
     }
 
     return 1U;
+}
+
+/* 面板是 BGR 顺序，发送前交换 R/B 分量 */
+static uint16_t lcd_swap_rb(uint16_t color)
+{
+    return (uint16_t)(((color & 0xF800U) >> 11) |
+                      (color & 0x07E0U) |
+                      ((color & 0x001FU) << 11));
+}
+
+/* 把 count 个相同颜色打包成 SPI 字节流（高字节在前） */
+static void lcd_pack_uniform_color(uint16_t color, uint16_t count)
+{
+    uint16_t swapped = lcd_swap_rb(color);
+    uint8_t  high = (uint8_t)(swapped >> 8);
+    uint8_t  low = (uint8_t)(swapped & 0xFFU);
+
+    for (uint16_t i = 0U; i < count; i++)
+    {
+        s_fill_buffer[i * 2U] = high;
+        s_fill_buffer[i * 2U + 1U] = low;
+    }
+}
+
+/* CS 拉低后一次性发送一批像素数据，而不是每个字节调用一次 HAL */
+static void lcd_send_pixels(const uint8_t *data, uint16_t length)
+{
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    (void)lcd_spi_send(data, length);
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
 }
 
 // 写命令
@@ -75,17 +108,10 @@ void LCD_WriteData(uint8_t data)
 
 void LCD_WriteData16(uint16_t data)
 {
-    // 提取RGB分量
-    uint8_t r = (data >> 11) & 0x1F;  // 红色5位
-    uint8_t g = (data >> 5) & 0x3F;   // 绿色6位  
-    uint8_t b = data & 0x1F;          // 蓝色5位
-    
-    // 交换R和B分量（RGB转BGR）
-    uint16_t bgr_data = (b << 11) | (g << 5) | r;
-    
-    // 发送数据（保持字节顺序不变）
-    LCD_WriteData(bgr_data >> 8);
-    LCD_WriteData(bgr_data & 0xFF);
+    uint16_t swapped = lcd_swap_rb(data);
+
+    LCD_WriteData((uint8_t)(swapped >> 8));
+    LCD_WriteData((uint8_t)(swapped & 0xFFU));
 }
 
 // 设置显示窗口
@@ -274,32 +300,10 @@ void LCD_Init(void)
 // 清屏
 void LCD_Clear(uint16_t color)
 {
-    uint32_t i;
-    uint32_t total_pixels = LCD_WIDTH * LCD_HEIGHT;
-    
-    // 使用带偏移的窗口设置
-    LCD_WriteCommand(0x2A); // 列地址设置
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x00 + 2);    // 起始列 = 0 + 2
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x7F + 2);    // 结束列 = 127 + 2
-    
-    LCD_WriteCommand(0x2B); // 行地址设置
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x00 + 1);    // 起始行 = 0 + 1
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x9F + 1);    // 结束行 = 159 + 1
-    
-    LCD_WriteCommand(0x2C); // 存储器写
-    
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
-    for(i = 0; i < total_pixels; i++)
-    {
-        LCD_WriteData16(color);
-    }
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+    LCD_Fill(0U, 0U, LCD_WIDTH - 1U, LCD_HEIGHT - 1U, color);
 }
-// 画点
+
+// 画点（文字/图片仍然逐点绘制，保证透明叠加效果不变）
 void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
 {
     if(x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
@@ -308,78 +312,54 @@ void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
     LCD_WriteData16(color);
 }
 
-// 填充矩形
+// 填充矩形：同一颜色的批量传输，整屏清屏从 40960 次 SPI 调用降到 160 次
 void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
-    uint32_t i, j;
-    uint32_t width = x2 - x1 + 1;
-    uint32_t height = y2 - y1 + 1;
-    
+    uint32_t width;
+    uint32_t height;
+
     if(x1 >= LCD_WIDTH || y1 >= LCD_HEIGHT) return;
-    if(x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1;
-    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1;
-    
+    if(x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1U;
+    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1U;
+    if(x1 > x2) { uint16_t t = x1; x1 = x2; x2 = t; }
+    if(y1 > y2) { uint16_t t = y1; y1 = y2; y2 = t; }
+
+    width = (uint32_t)(x2 - x1 + 1U);
+    height = (uint32_t)(y2 - y1 + 1U);
+    if((width == 0U) || (height == 0U)) return;
+
+    lcd_pack_uniform_color(color, (uint16_t)width);
+
     LCD_SetWindow(x1, y1, x2, y2);
-    
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
-    for(i = 0; i < height; i++)
+    for(uint32_t row = 0U; row < height; row++)
     {
-        for(j = 0; j < width; j++)
-        {
-            LCD_WriteData16(color);
-        }
+        lcd_send_pixels(s_fill_buffer, (uint16_t)(width * 2U));
     }
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
 }
 
 // 画水平线
 void LCD_DrawHLine(uint16_t x1, uint16_t x2, uint16_t y, uint16_t color)
 {
-    uint16_t i;
-    if(y >= LCD_HEIGHT) return;
-    if(x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
-    if(x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1;
-    
-    if(x1 > x2)
-    {
-        uint16_t temp = x1;
-        x1 = x2;
-        x2 = temp;
-    }
-    
-    LCD_SetWindow(x1, y, x2, y);
-    
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
-    for(i = x1; i <= x2; i++)
-    {
-        LCD_WriteData16(color);
-    }
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+    LCD_Fill(x1, y, x2, y, color);
 }
 
-// 画垂直线
+// 画垂直线：整列一次发送，避免逐像素调用 HAL
 void LCD_DrawVLine(uint16_t x, uint16_t y1, uint16_t y2, uint16_t color)
 {
-    uint16_t i;
+    uint32_t height;
+
     if(x >= LCD_WIDTH) return;
-    if(y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1;
-    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1;
-    
-    if(y1 > y2)
-    {
-        uint16_t temp = y1;
-        y1 = y2;
-        y2 = temp;
-    }
-    
+    if(y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1U;
+    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1U;
+    if(y1 > y2) { uint16_t t = y1; y1 = y2; y2 = t; }
+
+    height = (uint32_t)(y2 - y1 + 1U);
+    if(height == 0U) return;
+
+    lcd_pack_uniform_color(color, (uint16_t)height);
+
     LCD_SetWindow(x, y1, x, y2);
-    
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
-    for(i = y1; i <= y2; i++)
-    {
-        LCD_WriteData16(color);
-    }
-    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+    lcd_send_pixels(s_fill_buffer, (uint16_t)(height * 2U));
 }
 
 // 画矩形框

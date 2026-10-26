@@ -1,5 +1,9 @@
 #include "Fingerprint.h"
 #include "app_util.h"
+#include "Debug.h"
+
+/* 调试：把指纹模块返回的完整帧打印到 USART1（9600），定位误开门时设为 1 */
+#define FPC_DEBUG_LOG 1
 
 /*
  * 指纹模块（FPM10A 兼容协议）非阻塞驱动。
@@ -245,6 +249,17 @@ static void fpc_handle_frame(uint8_t pid, const uint8_t *data, uint8_t data_len)
     {
         return;
     }
+
+#if FPC_DEBUG_LOG
+    if (s_op != FPC_OP_NONE)
+    {
+        uart_printf("FP raw pid=%02X len=%u d0=%02X d1=%02X\r\n",
+                    (unsigned)pid, (unsigned)data_len,
+                    (unsigned)((data_len > 0U) ? data[0] : 0U),
+                    (unsigned)((data_len > 1U) ? data[1] : 0U));
+    }
+#endif
+
     if ((pid != 0x07U) || (data_len < 1U))
     {
         return; /* 只处理确认包 */
@@ -257,7 +272,23 @@ static void fpc_handle_frame(uint8_t pid, const uint8_t *data, uint8_t data_len)
         case FPC_OP_VERIFY:
             if (status == FGP_STATUS_OK)
             {
-                fpc_finish(FPC_OP_VERIFY, FPC_RESULT_OK, status);
+                /*
+                 * 关键安全修复：
+                 * 旧版 FPC_check() 除了 status==0x00，还要求 status 后一个字节为 0x05
+                 * （见旧代码 recv_buffer[10]==0x05 / recv_buffer[11]==0x05）。
+                 * 新版之前只检查 status==0，导致模块的“命令收到/手指按下”等
+                 * 短确认包也被当成“指纹匹配成功”，任何手指都会开门。
+                 *
+                 * 这里恢复旧版的严格条件：
+                 *   data[0] == 0x00 且 data[1] == 0x05 才算匹配成功。
+                 * 其他 status==0 的包（命令 ACK、手指事件等）一律忽略并继续等，
+                 * 不能当成成功，也不能立刻判失败（否则真正的匹配包会被丢掉）。
+                 */
+                if ((data_len >= 2U) && (data[1] == FPC_VERIFY_CONFIRM_BYTE))
+                {
+                    fpc_finish(FPC_OP_VERIFY, FPC_RESULT_OK, status);
+                }
+                /* 其余情况保持等待，直到 3 秒超时或收到非 0 状态码 */
             }
             else if (status == FGP_STATUS_TIMEOUT)
             {
