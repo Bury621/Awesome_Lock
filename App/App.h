@@ -1,20 +1,12 @@
-#include "main.h"
-#include "Debug.h"
-#include "Keyboard.h"
-#include "stepper_motor.h"
-#include "lcd.h"
-#include "UserInterface.h"
-#include "flash_eeprom.h"
-#include <string.h>
-#include "Fingerprint.h"
-#include "lcd_menu.h"
-
 #ifndef __APP_H
 #define __APP_H
 
-extern TIM_HandleTypeDef htim6;
+#include "main.h"
 
+/* 应用初始化（外设已由 CubeMX 初始化完成） */
 void App_Init(void);
+
+/* 应用主循环体：处理事件、轮询非阻塞任务、喂狗 */
 void App_Running(void);
 
-#endif
+#endif /* __APP_H */

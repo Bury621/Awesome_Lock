@@ -101,12 +101,16 @@ int main(void)
     SystemClock_Config();
 
     /* USER CODE BEGIN SysInit */
-	MX_GPIO_Init(); //后面的MX_GPIO_Init()全部删掉，不然开机不会进入主程序
-	HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
+	/*
+	 * 说明：
+	 * 旧版为了绕开“上电中断早于外设初始化”的问题，采用了
+	 * “先初始化 GPIO → 关闭 EXTI → 初始化外设 → 再打开 EXTI”的 hack。
+	 * 新版中断里只投递事件，不再访问任何外设，因此保持 CubeMX 默认顺序即可。
+	 */
     /* USER CODE END SysInit */
 
     /* Initialize all configured peripherals */
-    //MX_GPIO_Init();
+    MX_GPIO_Init();
     MX_I2C1_Init();
     MX_SPI2_Init();
     MX_TIM6_Init();
@@ -117,8 +121,8 @@ int main(void)
     MX_IWDG_Init();
     MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-	HAL_Delay(200);
-	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+	/* 给指纹模块、键盘等外部器件留出上电稳定时间 */
+	HAL_Delay(300);
 	App_Init();
   /* USER CODE END 2 */
 
@@ -227,9 +231,15 @@ static void MX_IWDG_Init(void)
     /* USER CODE BEGIN IWDG_Init 1 */
 
     /* USER CODE END IWDG_Init 1 */
+    /*
+     * IWDG 约 10s 超时（LSI 32kHz / 256 / 1250 ≈ 10s）。
+     * 必须大于最长的合法阻塞操作：Sector5（128KB）Flash 擦除最坏约 4s。
+     * 看门狗只在主循环喂，任何任务卡死都会自动复位，而不是像旧版那样
+     * 在 TIM4 中断里喂狗、主循环死了还能“假活”。
+     */
     hiwdg.Instance = IWDG;
     hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
-    hiwdg.Init.Reload = 624;
+    hiwdg.Init.Reload = 1249;
     if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
     {
         Error_Handler();
@@ -385,10 +395,16 @@ static void MX_TIM6_Init(void)
     /* USER CODE BEGIN TIM6_Init 1 */
 
     /* USER CODE END TIM6_Init 1 */
+    /*
+     * TIM6 作为步进电机 1us 时基：
+     * APB1 定时器时钟 84MHz，84MHz / (83 + 1) = 1MHz。
+     * 这样 stepper_motor 里的 step_us 参数就是真实的微秒数，
+     * 不再像旧版那样“1 个计数 = 2us”，导致配置值与实际速度差一倍。
+     */
     htim6.Instance = TIM6;
-    htim6.Init.Prescaler = 167;
+    htim6.Init.Prescaler = 83;
     htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim6.Init.Period = 199;
+    htim6.Init.Period = 499;
     htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
     if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
     {
@@ -580,11 +596,18 @@ static void MX_GPIO_Init(void)
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(KEYBOARD_IRQ_GPIO_Port, &GPIO_InitStruct);
 
-    /* EXTI interrupt init*/
-    HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 6);
+    /*
+     * 中断优先级分组已改为 NVIC_PRIORITYGROUP_4（见 stm32f4xx_hal_msp.c）：
+     *   SysTick = 0（最高，保证 HAL 超时计时永远在走）
+     *   TIM6    = 1（电机节拍）
+     *   UART5   = 2（指纹接收）
+     *   EXTI    = 3（按键/指纹触摸/人体感应）
+     * 由于 EXTI 里只投递事件，低优先级也不会影响实时性。
+     */
+    HAL_NVIC_SetPriority(EXTI0_IRQn, 3U, 0U);
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
-    HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 5);
+    HAL_NVIC_SetPriority(EXTI9_5_IRQn, 3U, 0U);
     HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 }

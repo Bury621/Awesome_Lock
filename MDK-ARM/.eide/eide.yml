@@ -60,6 +60,9 @@ virtualFolder:
       files:
         - path: ../App/App.c
         - path: ../App/App.h
+        - path: ../App/app_util.h
+        - path: ../App/app_events.c
+        - path: ../App/app_events.h
         - path: ../App/Debug.c
         - path: ../App/Debug.h
       folders: []
@@ -77,15 +80,13 @@ virtualFolder:
         - path: ../Hardware/flash_eeprom.h
         - path: ../Hardware/Fingerprint.c
         - path: ../Hardware/Fingerprint.h
-        - path: ../Hardware/lcd_menu.c
-        - path: ../Hardware/lcd_menu.h
       folders: []
     - name: Service
       files:
-        - path: ../Service/UserInterface.c
-        - path: ../Service/UserInterface.h
-        - path: ../Service/multi_timer.c
-        - path: ../Service/multi_timer.h
+        - path: ../Service/lock_app.c
+        - path: ../Service/lock_app.h
+        - path: ../Service/ui_views.c
+        - path: ../Service/ui_views.h
       folders: []
     - name: Config
       files:
@@ -238,4 +239,9 @@ targets:
         otherCmds: ""
         proType: 1
         speed: 8000
-    uploader: JLink
+      OpenOCD:
+        baseAddr: "0x08000000"
+        bin: ""
+        interface: stlink
+        target: stm32f4x
+    uploader: OpenOCD

@@ -806,6 +806,21 @@
               <FilePath>..\App\App.h</FilePath>
             </File>
             <File>
+              <FileName>app_util.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\app_util.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_events.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\app_events.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_events.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\app_events.h</FilePath>
+            </File>
+            <File>
               <FileName>Debug.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\Debug.c</FilePath>
@@ -880,40 +895,30 @@
               <FileType>5</FileType>
               <FilePath>..\Hardware\Fingerprint.h</FilePath>
             </File>
-            <File>
-              <FileName>lcd_menu.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Hardware\lcd_menu.c</FilePath>
-            </File>
-            <File>
-              <FileName>lcd_menu.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Hardware\lcd_menu.h</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
           <GroupName>Service</GroupName>
           <Files>
             <File>
-              <FileName>UserInterface.c</FileName>
+              <FileName>lock_app.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Service\UserInterface.c</FilePath>
+              <FilePath>..\Service\lock_app.c</FilePath>
             </File>
             <File>
-              <FileName>UserInterface.h</FileName>
+              <FileName>lock_app.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Service\UserInterface.h</FilePath>
+              <FilePath>..\Service\lock_app.h</FilePath>
             </File>
             <File>
-              <FileName>multi_timer.c</FileName>
+              <FileName>ui_views.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Service\multi_timer.c</FilePath>
+              <FilePath>..\Service\ui_views.c</FilePath>
             </File>
             <File>
-              <FileName>multi_timer.h</FileName>
+              <FileName>ui_views.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Service\multi_timer.h</FilePath>
+              <FilePath>..\Service\ui_views.h</FilePath>
             </File>
           </Files>
         </Group>

@@ -69,7 +69,14 @@ void HAL_MspInit(void)
     __HAL_RCC_SYSCFG_CLK_ENABLE();
     __HAL_RCC_PWR_CLK_ENABLE();
 
-    HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_0);
+    /*
+     * 关键修复：旧工程使用 NVIC_PRIORITYGROUP_0，4 位全部是子优先级，
+     * 所有中断处于同一抢占级，SysTick 无法抢占任何一个 ISR。
+     * 一旦在 EXTI 里调用 HAL_UART_Receive/HAL_I2C_Master_Receive，
+     * HAL_GetTick() 不再增长，超时永远不触发 → 死等。
+     * 改为 GROUP_4 后，高优先级中断可以抢占低优先级中断，HAL 超时才可靠。
+     */
+    HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
     /* System interrupt init*/
     /* MemoryManagement_IRQn interrupt configuration */
@@ -248,7 +255,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
         /* Peripheral clock enable */
         __HAL_RCC_TIM2_CLK_ENABLE();
         /* TIM2 interrupt Init */
-        HAL_NVIC_SetPriority(TIM2_IRQn, 0, 3);
+        HAL_NVIC_SetPriority(TIM2_IRQn, 5U, 0U);
         HAL_NVIC_EnableIRQ(TIM2_IRQn);
     /* USER CODE BEGIN TIM2_MspInit 1 */
 
@@ -262,7 +269,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
         /* Peripheral clock enable */
         __HAL_RCC_TIM4_CLK_ENABLE();
         /* TIM4 interrupt Init */
-        HAL_NVIC_SetPriority(TIM4_IRQn, 0, 2);
+        HAL_NVIC_SetPriority(TIM4_IRQn, 5U, 0U);
         HAL_NVIC_EnableIRQ(TIM4_IRQn);
     /* USER CODE BEGIN TIM4_MspInit 1 */
 
@@ -276,7 +283,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
         /* Peripheral clock enable */
         __HAL_RCC_TIM6_CLK_ENABLE();
         /* TIM6 interrupt Init */
-        HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 1);
+        HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 1U, 0U);
         HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
     /* USER CODE BEGIN TIM6_MspInit 1 */
 
@@ -290,7 +297,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
         /* Peripheral clock enable */
         __HAL_RCC_TIM7_CLK_ENABLE();
         /* TIM7 interrupt Init */
-        HAL_NVIC_SetPriority(TIM7_IRQn, 0, 4);
+        HAL_NVIC_SetPriority(TIM7_IRQn, 5U, 0U);
         HAL_NVIC_EnableIRQ(TIM7_IRQn);
     /* USER CODE BEGIN TIM7_MspInit 1 */
 

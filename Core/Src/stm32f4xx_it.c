@@ -22,7 +22,6 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "multi_timer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +59,7 @@ extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
+extern UART_HandleTypeDef huart5;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -225,8 +225,13 @@ void EXTI9_5_IRQHandler(void)
 
     /* USER CODE END EXTI9_5_IRQn 0 */
     HAL_GPIO_EXTI_IRQHandler(KEYBOARD_IRQ_Pin);
-    HAL_GPIO_EXTI_IRQHandler(Led2_Pin);
     HAL_GPIO_EXTI_IRQHandler(FP_IRQ_Pin);
+    /*
+     * 旧版这里误写成了 Led2_Pin（PA7，输出脚）。
+     * 真正的 EXTI7 来源是霍尔/门磁 PE7，必须显式清它的挂起位，
+     * 否则会一直进中断（中断风暴），表现为整机卡死。
+     */
+    HAL_GPIO_EXTI_IRQHandler(Hall_IRQ_Pin);
     /* USER CODE BEGIN EXTI9_5_IRQn 1 */
 
     /* USER CODE END EXTI9_5_IRQn 1 */
@@ -280,12 +285,20 @@ void TIM6_DAC_IRQHandler(void)
 void TIM7_IRQHandler(void)
 {
     /* USER CODE BEGIN TIM7_IRQn 0 */
-    // 调用我们的定时器处理函数
-    MultiTimer_IRQ_Handler();
     /* USER CODE END TIM7_IRQn 0 */
     HAL_TIM_IRQHandler(&htim7);
     /* USER CODE BEGIN TIM7_IRQn 1 */
     /* USER CODE END TIM7_IRQn 1 */
+}
+
+/**
+    * @brief This function handles UART5 global interrupt.
+    * @note  指纹模块接收中断。旧工程没有实现这个函数，
+    *        因此一旦启用 HAL_UART_Receive_IT 就会进默认死循环。
+    */
+void UART5_IRQHandler(void)
+{
+    HAL_UART_IRQHandler(&huart5);
 }
 
 /* USER CODE BEGIN 1 */

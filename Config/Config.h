@@ -2,37 +2,86 @@
 #define __CONFIG_H
 
 /*
-开发者:Bury
-版本:1.0
+ * 开发者: Bury
+ * 版本: 2.0（重构版）
+ *
+ * 工程配置文件。
+ *
+ * 所有“时间”类参数统一使用 ms（毫秒），除特别注明外。
+ * 旧版本中部分参数以“秒”为单位，重构时已统一，避免不同模块互相混淆。
+ */
 
-工程配置文件
-*/
+/* -------------------------------------------------------------------------- */
+/* 密码                                                                        */
+/* -------------------------------------------------------------------------- */
+#define ADMIN_PWD           "84364323"  /* 管理员密码（编译期常量）             */
+#define DEFULT_PWD          "1234"      /* 出厂默认开门密码                     */
+#define PWD_MAX_LEN         32          /* 密码缓冲区大小，含结尾 '\0'          */
+#define PWD_MIN_LEN         4           /* 允许设置的最短密码长度               */
 
-#define ADMIN_PWD "84364323" //管理员密码
-#define DEFULT_PWD "1234" //默认开门密码
-#define PWD_MAX_LEN 32 //密码长度限制
-#define PWD_MIN_LEN 4 //密码最短限制
+/* -------------------------------------------------------------------------- */
+/* 门锁 / 步进电机                                                             */
+/* -------------------------------------------------------------------------- */
+#define OPEN_DOOR_ANGLE      75U        /* 开门旋转角度（度）                   */
+/*
+ * 步进间隔，单位 us。数值越小电机越快、扭矩越小。
+ * 旧版 TIM6 为 2us 计数，OPEN_DOOR_SPEED=490 实际是 980us；
+ * 新版 TIM6 改为 1us 计数，因此这里直接写 980，保持原来的开门速度。
+ */
+#define OPEN_DOOR_STEP_US    980U
+#define OPEN_DOOR_TIME_MS    2000U      /* 开门后多久自动关门                   */
+#define OPEN_DOOR_HOLD_MS    4000U      /* 开门后多久返回主界面                 */
 
-#define OPEN_DOOR_ANGLE 75 //开门步进电机旋转角度
-#define OPEN_DOOR_SPEED 490 //开门步进电机旋转速度
-#define OPEN_DOOR_TIME 2 //开关门间隔时间
-#define OPEN_DOOR_RETURN_MAIN_TIME 4 //开门后返回主界面时间
+/* -------------------------------------------------------------------------- */
+/* 防暴力破解                                                                  */
+/* -------------------------------------------------------------------------- */
+#define FAIL_LOCK_COUNT      3U         /* 密码连续错误达到该次数 → 锁定         */
+#define FAIL_LOCK_TIME       600U       /* 锁定时间（秒）                       */
+#define FAIL_LOCK_TIME_MS    (FAIL_LOCK_TIME * 1000U)
+#define FGP_MAX_VERIFY       3U         /* 指纹连续失败达到该次数 → 锁定         */
 
-#define FAIL_LOCK_COUNT 3 //密码错误锁机次数
-#define FAIL_LOCK_TIME 600 //密码错误锁机时间(秒)
- 
-#define FGP_TIMEOUT 20000 //指纹采集超时时间(毫秒)
-#define FGP_ALLOW_FAINGER_OUT 1 //注册时，多次指纹采集过程中，是否要求手指离开才能进入下一次指纹图像 采集， 0-要求离开；1-不要求离开；
-#define FGP_FINGER_RESGIST_LIGHT 1 //bit0：采图背光灯控制位，0-LED 长亮，1-LED 获取图像成功后灭； 
-#define FGP_COLLECT_FINGER_NUMBER 6 //采集指纹的次数
-#define FGP_MAX_VERIFY 3 //指纹验证失败锁机阈值
+/* -------------------------------------------------------------------------- */
+/* 指纹模块                                                                    */
+/* -------------------------------------------------------------------------- */
+#define FGP_TIMEOUT          20000U     /* 指纹采集超时（ms，旧代码未使用）      */
+#define FGP_ALLOW_FAINGER_OUT 1         /* 注册时是否要求手指离开                 */
+#define FGP_FINGER_RESGIST_LIGHT 1      /* 采图背光控制位                        */
+#define FGP_COLLECT_FINGER_NUMBER 6     /* 采集指纹次数                          */
+#define FGP_VERIFY_TIMEOUT_MS 3000U     /* 单次指纹验证超时                      */
+#define FGP_ENROLL_TIMEOUT_MS 20000U    /* 指纹注册超时                          */
+#define FGP_CLEAR_TIMEOUT_MS  3000U     /* 清空指纹库超时                        */
 
-#define SLEEPING_TIME 10 //无操作自动休眠时间(秒)
+/* -------------------------------------------------------------------------- */
+/* 人机交互                                                                    */
+/* -------------------------------------------------------------------------- */
+#define SLEEPING_TIME        10U        /* 主界面无操作自动熄屏时间（秒）        */
+#define SLEEPING_TIME_MS     (SLEEPING_TIME * 1000U)
+#define KEYPAD_DEBOUNCE_MS   25U        /* 按键中断到读取键值的去抖延迟          */
+#define UI_MESSAGE_TIME_MS   1500U      /* 普通提示界面停留时间                  */
+#define UI_RESULT_TIME_MS    2000U      /* 操作结果界面停留时间                  */
 
-#define MOTOR_REVERSE //电机反转
-#define BODY_WAKEUP //人体感应模块唤醒
+/* 电机方向反转（按实际装配方向选择） */
+#define MOTOR_REVERSE
+/* 人体感应唤醒 */
+#define BODY_WAKEUP
 
-//高级配置
-#define FLASH_EEPROM_BASE_ADDR 0x0800C000U; //密码在Flash中的地址
-#define PASSWORD_FLASH_SECTOR FLASH_SECTOR_3 //密码在Flash的页
-#endif
+/* -------------------------------------------------------------------------- */
+/* 高级配置                                                                    */
+/* -------------------------------------------------------------------------- */
+/*
+ * 密码存储位置。
+ *
+ * 旧版使用 0x0800C000（Sector 3 起始，仅 16KB 空间）。固件已经 37KB+，
+ * 一旦代码增长越过 0x0800C000，擦除密码扇区时会直接把正在运行的程序擦掉。
+ * 新版改用 Sector 5（128KB，0x08020000），给固件留出 128KB 空间；
+ * 对应的擦除时间上限也更大，看门狗已放宽到 10s 以覆盖 Flash 擦除。
+ *
+ * 注意：地址变更后，旧固件里保存的密码不会被读取，首次启动使用默认密码。
+ * 如需保留旧密码，可改回 0x0800C000U / FLASH_SECTOR_3，但务必确认固件小于 48KB。
+ */
+#define FLASH_EEPROM_BASE_ADDR  0x08020000U
+#define PASSWORD_FLASH_SECTOR   FLASH_SECTOR_5
+#define PWD_STORE_MAGIC         0x31445750U  /* "PWD1" */
+#define PWD_STORE_VERSION       0x0200U
+
+#endif /* __CONFIG_H */

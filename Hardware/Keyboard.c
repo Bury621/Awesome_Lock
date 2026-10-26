@@ -1,39 +1,132 @@
-#include "main.h"
 #include "Keyboard.h"
 
-//0852*741DCBA#963
-uint16_t Keyboard_get(void)
-{
-	uint8_t rx_data[2]; //接收缓冲区
-	HAL_StatusTypeDef status;
-	status = HAL_I2C_Master_Receive(&hi2c1,KEYBOARD_ADDRESS<<1 | 0x01,rx_data,2,100);
-	if(status == HAL_OK) {
-    // 读取成功
+/* 0x0852*741DCBA#963：与原工程按键板一致 */
+static const char s_key_map[] = "0852*741DCBA#963";
 
-	} else {
-		// 处理错误
-		Error_Handler();
-	}
-	return rx_data[0]<<8 | rx_data[1];
-}
-char Keyboard_GetChar(uint16_t key_data) //解析返回值，返回按下的字符，没有按下就返回\0
+static uint32_t s_last_recover_tick;
+static uint8_t  s_error_count;
+
+/* 粗略的微秒延时：168MHz 下约每 8 次循环 1us，用于软件 I2C 恢复 */
+static void delay_short(void)
 {
-    // 检查是否只有一个按键按下（只有一个位为1）
-    if (key_data == 0 || (key_data & (key_data - 1)) != 0) {
-        return '\0';  // 没有按下或多个按下
+    for (volatile uint32_t i = 0U; i < 120U; i++)
+    {
+        __NOP();
     }
-    
-    // 定义按键映射表（从高位到低位）
-    const char key_map[] = "0852*741DCBA#963";
-    
-    // 找到按下的位的位置
-    uint8_t pos = 0;
+}
+
+void Keyboard_RecoverBus(void)
+{
+    GPIO_InitTypeDef gpio = {0};
+
+    /* 1ms 内最多恢复一次，避免故障时反复 DeInit/Init 抢占 CPU */
+    if ((HAL_GetTick() - s_last_recover_tick) < 1000U)
+    {
+        return;
+    }
+    s_last_recover_tick = HAL_GetTick();
+
+    (void)HAL_I2C_DeInit(&hi2c1);
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    gpio.Pin = KEYBOARD_SCL_Pin | KEYBOARD_SDA_Pin;
+    gpio.Mode = GPIO_MODE_OUTPUT_OD;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &gpio);
+
+    /*
+     * 从机卡住 SDA 时，主机发 9 个时钟把它“顶”出来，再补一个 STOP。
+     */
+    HAL_GPIO_WritePin(GPIOB, KEYBOARD_SDA_Pin, GPIO_PIN_SET);
+    for (uint8_t i = 0U; i < 9U; i++)
+    {
+        HAL_GPIO_WritePin(GPIOB, KEYBOARD_SCL_Pin, GPIO_PIN_RESET);
+        delay_short();
+        HAL_GPIO_WritePin(GPIOB, KEYBOARD_SCL_Pin, GPIO_PIN_SET);
+        delay_short();
+    }
+
+    HAL_GPIO_WritePin(GPIOB, KEYBOARD_SDA_Pin, GPIO_PIN_RESET);
+    delay_short();
+    HAL_GPIO_WritePin(GPIOB, KEYBOARD_SCL_Pin, GPIO_PIN_SET);
+    delay_short();
+    HAL_GPIO_WritePin(GPIOB, KEYBOARD_SDA_Pin, GPIO_PIN_SET);
+    delay_short();
+
+    /* 重新初始化 I2C 与引脚复用 */
+    (void)HAL_I2C_Init(&hi2c1);
+}
+
+bool Keyboard_ReadRaw(uint16_t *key_data)
+{
+    uint8_t rx_data[2] = {0U, 0U};
+    HAL_StatusTypeDef status;
+
+    if (key_data == NULL)
+    {
+        return false;
+    }
+
+    status = HAL_I2C_Master_Receive(&hi2c1,
+                                    (uint16_t)((KEYBOARD_ADDRESS << 1) | 0x01U),
+                                    rx_data, 2U, KEYBOARD_I2C_TIMEOUT_MS);
+    if (status == HAL_OK)
+    {
+        s_error_count = 0U;
+        *key_data = (uint16_t)(((uint16_t)rx_data[0] << 8) | rx_data[1]);
+        return true;
+    }
+
+    /* I2C 偶发错误属于正常现象（热插拔、干扰），累计后尝试恢复总线 */
+    if (s_error_count < 0xFFU)
+    {
+        s_error_count++;
+    }
+    if (s_error_count >= 3U)
+    {
+        s_error_count = 0U;
+        Keyboard_RecoverBus();
+    }
+
+    return false;
+}
+
+char Keyboard_GetChar(uint16_t key_data)
+{
+    uint8_t pos = 0U;
     uint16_t temp = key_data;
-    while (temp > 1) {
+
+    /* 只接受“单键按下”，0 或多键同按都返回无效 */
+    if ((key_data == 0U) || ((key_data & (uint16_t)(key_data - 1U)) != 0U))
+    {
+        return '\0';
+    }
+
+    while (temp > 1U)
+    {
         temp >>= 1;
         pos++;
     }
-    
-    // 返回对应的字符
-    return key_map[15 - pos];  // 因为高位对应字符串开头，所以要反向
+
+    if (pos > 15U)
+    {
+        return '\0';
+    }
+
+    return s_key_map[15U - pos];
+}
+
+void Keyboard_Init(void)
+{
+    uint16_t dummy;
+
+    s_last_recover_tick = 0U;
+    s_error_count = 0U;
+
+    /* 上电探测一次：失败不阻塞、不报错，主循环会继续重试 */
+    (void)Keyboard_ReadRaw(&dummy);
+
+    /* 清掉上电期间可能挂起的按键中断标志 */
+    __HAL_GPIO_EXTI_CLEAR_IT(KEYBOARD_IRQ_Pin);
 }
