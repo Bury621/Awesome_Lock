@@ -1,0 +1,520 @@
+#include "lcd.h"
+#include <string.h>
+
+extern SPI_HandleTypeDef hspi2;
+
+// 写命令
+void LCD_WriteCommand(uint8_t cmd)
+{
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LCD_DC_PORT, LCD_DC_PIN, GPIO_PIN_RESET);
+    
+    HAL_SPI_Transmit(&hspi2, &cmd, 1, HAL_MAX_DELAY);
+    
+    HAL_GPIO_WritePin(LCD_DC_PORT, LCD_DC_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+
+// 写数据
+void LCD_WriteData(uint8_t data)
+{
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    
+    HAL_SPI_Transmit(&hspi2, &data, 1, HAL_MAX_DELAY);
+    
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+
+void LCD_WriteData16(uint16_t data)
+{
+    // 提取RGB分量
+    uint8_t r = (data >> 11) & 0x1F;  // 红色5位
+    uint8_t g = (data >> 5) & 0x3F;   // 绿色6位  
+    uint8_t b = data & 0x1F;          // 蓝色5位
+    
+    // 交换R和B分量（RGB转BGR）
+    uint16_t bgr_data = (b << 11) | (g << 5) | r;
+    
+    // 发送数据（保持字节顺序不变）
+    LCD_WriteData(bgr_data >> 8);
+    LCD_WriteData(bgr_data & 0xFF);
+}
+
+// 设置显示窗口
+void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
+{
+    // 添加偏移量
+    x1 += 2;  // 右移2像素
+    x2 += 2;  // 右移2像素
+    y1 += 1;  // 下移1像素
+    y2 += 1;  // 下移1像素
+    
+    // 限制坐标范围
+    if(x1 >= LCD_WIDTH + 2) x1 = LCD_WIDTH + 2 - 1;
+    if(x2 >= LCD_WIDTH + 2) x2 = LCD_WIDTH + 2 - 1;
+    if(y1 >= LCD_HEIGHT + 1) y1 = LCD_HEIGHT + 1 - 1;
+    if(y2 >= LCD_HEIGHT + 1) y2 = LCD_HEIGHT + 1 - 1;
+    
+    LCD_WriteCommand(0x2A); // 列地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(x1);      // 起始列
+    LCD_WriteData(0x00);
+    LCD_WriteData(x2);      // 结束列
+    
+    LCD_WriteCommand(0x2B); // 行地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(y1);      // 起始行
+    LCD_WriteData(0x00);
+    LCD_WriteData(y2);      // 结束行
+    
+    LCD_WriteCommand(0x2C); // 存储器写
+}
+// LCD初始化
+void LCD_Init(void)
+{
+    // 初始化GPIO
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
+    // 背光引脚
+    GPIO_InitStruct.Pin = LCD_BL_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(LCD_BL_PORT, &GPIO_InitStruct);
+    
+    // 控制引脚
+    GPIO_InitStruct.Pin = LCD_CS_PIN | LCD_DC_PIN | LCD_RES_PIN;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    
+    // 初始状态
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LCD_DC_PORT, LCD_DC_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LCD_BL_PORT, LCD_BL_PIN, GPIO_PIN_RESET);
+	
+	
+    
+    // 复位序列
+    HAL_GPIO_WritePin(LCD_RES_PORT, LCD_RES_PIN, GPIO_PIN_SET);
+    HAL_Delay(10);
+    HAL_GPIO_WritePin(LCD_RES_PORT, LCD_RES_PIN, GPIO_PIN_RESET);
+    HAL_Delay(20);
+    HAL_GPIO_WritePin(LCD_RES_PORT, LCD_RES_PIN, GPIO_PIN_SET);
+    HAL_Delay(120);
+    
+    // 初始化命令序列
+    LCD_WriteCommand(0x11); // Sleep out
+    HAL_Delay(120);
+    
+    // 设置帧率
+    LCD_WriteCommand(0xB1); // FRMCTR1
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x2D);
+    
+    LCD_WriteCommand(0xB2); // FRMCTR2
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x2D);
+    
+    LCD_WriteCommand(0xB3); // FRMCTR3
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x2D);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x2D);
+    
+    LCD_WriteCommand(0xB4); // INVCTR
+    LCD_WriteData(0x07);
+    
+    // 电源控制
+    LCD_WriteCommand(0xC0); // PWCTR1
+    LCD_WriteData(0xA2);
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x84);
+    
+    LCD_WriteCommand(0xC1); // PWCTR2
+    LCD_WriteData(0xC5);
+    
+    LCD_WriteCommand(0xC2); // PWCTR3
+    LCD_WriteData(0x0A);
+    LCD_WriteData(0x00);
+    
+    LCD_WriteCommand(0xC3); // PWCTR4
+    LCD_WriteData(0x8A);
+    LCD_WriteData(0x2A);
+    
+    LCD_WriteCommand(0xC4); // PWCTR5
+    LCD_WriteData(0x8A);
+    LCD_WriteData(0xEE);
+    
+    LCD_WriteCommand(0xC5); // VMCTR1
+    LCD_WriteData(0x0E);
+    
+    // 关闭显示反转
+    LCD_WriteCommand(0x20); // Display Inversion Off
+    
+    // 设置内存访问控制
+    LCD_WriteCommand(0x36); // Memory Data Access Control
+    LCD_WriteData(0xC8);    // MY=1, MX=0, MV=1, ML=0, RGB=0, MH=0
+    
+    // 设置像素格式
+    LCD_WriteCommand(0x3A); // COLMOD: Pixel Format Set
+    LCD_WriteData(0x05);    // 16 bits per pixel
+    
+    // 设置显示区域
+    LCD_WriteCommand(0x2A); // 列地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);    // 起始列 = 0
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x7F);    // 结束列 = 127
+    
+    LCD_WriteCommand(0x2B); // 行地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);    // 起始行 = 0
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x9F);    // 结束行 = 159
+    
+    // Gamma校正
+    LCD_WriteCommand(0xE0); // Gamma Adjustment (+Polarity)
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x1C);
+    LCD_WriteData(0x07);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x37);
+    LCD_WriteData(0x32);
+    LCD_WriteData(0x29);
+    LCD_WriteData(0x2D);
+    LCD_WriteData(0x29);
+    LCD_WriteData(0x25);
+    LCD_WriteData(0x2B);
+    LCD_WriteData(0x39);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x10);
+    
+    LCD_WriteCommand(0xE1); // Gamma Adjustment (-Polarity)
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x1D);
+    LCD_WriteData(0x07);
+    LCD_WriteData(0x06);
+    LCD_WriteData(0x2E);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x29);
+    LCD_WriteData(0x2D);
+    LCD_WriteData(0x2E);
+    LCD_WriteData(0x2E);
+    LCD_WriteData(0x37);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x10);
+    
+    // 打开显示
+    LCD_WriteCommand(0x29); // Display On
+    HAL_Delay(100);
+    
+    // 开启背光
+    LCD_SetBacklight(1);
+    
+    // 清屏测试
+    LCD_Clear(BLACK);
+}
+
+// 清屏
+void LCD_Clear(uint16_t color)
+{
+    uint32_t i;
+    uint32_t total_pixels = LCD_WIDTH * LCD_HEIGHT;
+    
+    // 使用带偏移的窗口设置
+    LCD_WriteCommand(0x2A); // 列地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00 + 2);    // 起始列 = 0 + 2
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x7F + 2);    // 结束列 = 127 + 2
+    
+    LCD_WriteCommand(0x2B); // 行地址设置
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00 + 1);    // 起始行 = 0 + 1
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x9F + 1);    // 结束行 = 159 + 1
+    
+    LCD_WriteCommand(0x2C); // 存储器写
+    
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    for(i = 0; i < total_pixels; i++)
+    {
+        LCD_WriteData16(color);
+    }
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+// 画点
+void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
+{
+    if(x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
+    
+    LCD_SetWindow(x, y, x, y);
+    LCD_WriteData16(color);
+}
+
+// 填充矩形
+void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+{
+    uint32_t i, j;
+    uint32_t width = x2 - x1 + 1;
+    uint32_t height = y2 - y1 + 1;
+    
+    if(x1 >= LCD_WIDTH || y1 >= LCD_HEIGHT) return;
+    if(x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1;
+    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1;
+    
+    LCD_SetWindow(x1, y1, x2, y2);
+    
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    for(i = 0; i < height; i++)
+    {
+        for(j = 0; j < width; j++)
+        {
+            LCD_WriteData16(color);
+        }
+    }
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+
+// 画水平线
+void LCD_DrawHLine(uint16_t x1, uint16_t x2, uint16_t y, uint16_t color)
+{
+    uint16_t i;
+    if(y >= LCD_HEIGHT) return;
+    if(x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
+    if(x2 >= LCD_WIDTH) x2 = LCD_WIDTH - 1;
+    
+    if(x1 > x2)
+    {
+        uint16_t temp = x1;
+        x1 = x2;
+        x2 = temp;
+    }
+    
+    LCD_SetWindow(x1, y, x2, y);
+    
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    for(i = x1; i <= x2; i++)
+    {
+        LCD_WriteData16(color);
+    }
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+
+// 画垂直线
+void LCD_DrawVLine(uint16_t x, uint16_t y1, uint16_t y2, uint16_t color)
+{
+    uint16_t i;
+    if(x >= LCD_WIDTH) return;
+    if(y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1;
+    if(y2 >= LCD_HEIGHT) y2 = LCD_HEIGHT - 1;
+    
+    if(y1 > y2)
+    {
+        uint16_t temp = y1;
+        y1 = y2;
+        y2 = temp;
+    }
+    
+    LCD_SetWindow(x, y1, x, y2);
+    
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET);
+    for(i = y1; i <= y2; i++)
+    {
+        LCD_WriteData16(color);
+    }
+    HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET);
+}
+
+// 画矩形框
+void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+{
+    LCD_DrawHLine(x1, x2, y1, color); // 上边
+    LCD_DrawHLine(x1, x2, y2, color); // 下边
+    LCD_DrawVLine(x1, y1, y2, color); // 左边
+    LCD_DrawVLine(x2, y1, y2, color); // 右边
+}
+
+// 显示字符函数（无背景色，透明显示）
+void LCD_ShowChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color)
+{
+    uint32_t i, j;
+    uint8_t temp;
+    
+    if(x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
+    
+    for(i = 0; i < font.height; i++)
+    {
+        temp = font.table[(ch - ' ') * font.height + i];
+        for(j = 0; j < font.width; j++)
+        {
+            // 改为从最低位开始扫描（水平翻转）
+            if(temp & (0x01 << j))
+            {
+                LCD_DrawPoint(x + j, y + i, color);
+            }
+        }
+    }
+}
+
+// 显示字符串（无背景色）
+void LCD_ShowString(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color)
+{
+    while(*str)
+    {
+        LCD_ShowChar(x, y, *str, font, color);
+        x += font.width;
+        str++;
+        
+        // 如果超出屏幕宽度，换行
+        if(x + font.width >= LCD_WIDTH)
+        {
+            x = 0;
+            y += font.height;
+        }
+    }
+}
+// 数字转字符串（不依赖sprintf）
+static void NumberToString(uint32_t num, char *str)
+{
+    uint8_t i = 0;
+    uint8_t j = 0;
+    char temp[20];
+    
+    // 处理0的情况
+    if(num == 0)
+    {
+        str[0] = '0';
+        str[1] = '\0';
+        return;
+    }
+    
+    // 逐位转换
+    while(num > 0)
+    {
+        temp[i++] = '0' + (num % 10);
+        num /= 10;
+    }
+    
+    // 反转字符串
+    while(i > 0)
+    {
+        str[j++] = temp[--i];
+    }
+    str[j] = '\0';
+}
+
+// 显示数字
+void LCD_ShowNum(uint16_t x, uint16_t y, uint32_t num, uint8_t len, FontDef font, uint16_t color)
+{
+    uint8_t t;
+    char str[20];
+    uint8_t num_len = 0;
+    uint32_t temp_num = num;
+    
+    // 计算数字长度
+    do {
+        num_len++;
+        temp_num /= 10;
+    } while(temp_num > 0);
+    
+    // 数字转字符串
+    NumberToString(num, str);
+    
+    // 显示数字，前面补空格
+    for(t = 0; t < len; t++)
+    {
+        if(t < len - num_len)
+        {
+            LCD_ShowChar(x + t * font.width, y, ' ', font, color);
+        }
+        else
+        {
+            LCD_ShowChar(x + t * font.width, y, str[t - (len - num_len)], font, color);
+        }
+    }
+}
+void LCD_ShowBedImage(uint16_t x, uint16_t y)
+{
+    const uint8_t *image_data = gImage_bed + 12;
+    uint16_t width = 48;
+    uint16_t height = 48;
+    
+    for(uint16_t i = 0; i < height; i++)
+    {
+        for(uint16_t j = 0; j < width; j++)
+        {
+            uint32_t index = (i * width + j) * 2;
+            uint16_t pixel_color = (image_data[index] << 8) | image_data[index + 1];
+            
+            // 透明处理：跳过纯黑色
+            if(pixel_color != 0x0000) {
+                LCD_DrawPoint(x + j, y + i, pixel_color);
+            }
+        }
+    }
+	LCD_DrawPoint(x + 47, y + 47, SILVER);
+	LCD_DrawPoint(x + 46, y + 47, SILVER);
+}
+void LCD_ShowChinese16x16(uint16_t x, uint16_t y, uint8_t char_index, uint16_t color)
+{
+    uint32_t i, j;
+    
+    if(x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
+    
+    for(i = 0; i < 16; i++)
+    {
+        for(j = 0; j < 16; j++)
+        {
+            // 直接使用原字模数据，不进行翻转
+            uint8_t byte_index = i * 2 + (j / 8);
+            uint8_t bit_index = 7 - (j % 8);  // 位顺序不变
+            
+            if(Chinese_16x16[char_index][byte_index] & (0x80 >> bit_index))
+            {
+                LCD_DrawPoint(x + j, y + i, color);
+            }
+        }
+    }
+}
+
+// 设置显示方向
+void LCD_SetDirection(uint8_t direction)
+{
+    LCD_WriteCommand(0x36); // MADCTL
+    LCD_WriteData(direction);
+}
+void LCD_ShowChineseString16x16(uint16_t x, uint16_t y, const uint8_t *char_indexes, uint8_t count, uint16_t color)
+{
+    uint8_t i;
+    
+    for(i = 0; i < count; i++)
+    {
+        LCD_ShowChinese16x16(x + i * 16, y, char_indexes[i], color);
+    }
+}
+// 控制背光
+void LCD_SetBacklight(uint8_t state)
+{
+    HAL_GPIO_WritePin(LCD_BL_PORT, LCD_BL_PIN, state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+// 打开显示
+void LCD_DisplayOn(void)
+{
+    LCD_WriteCommand(0x29);
+}
+
+// 关闭显示
+void LCD_DisplayOff(void)
+{
+    LCD_WriteCommand(0x28);
+}

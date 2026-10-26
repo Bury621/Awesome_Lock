@@ -1,0 +1,80 @@
+# ====================
+# 编译输出文件
+# ====================
+*.o
+*.d
+*.crf
+*.htm
+*.dep
+*.map
+*.lst
+*.axf
+*.elf
+*.hex
+*.bin
+*.sct
+*.scvd
+*.lnp
+*.iex
+*.log
+
+# ====================
+# Keil MDK-ARM 项目文件
+# ====================
+# 编译中间目录（注意是 MDK-ARM/ 开头，不是 MDK-ARM/*/）
+MDK-ARM/Listings/
+MDK-ARM/Objects/
+MDK-ARM/DebugConfig/
+MDK-ARM/build/
+#MDK-ARM/.eide/
+
+# Keil 用户配置文件（每个电脑不同）
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx
+MDK-ARM/*.uvprojx.user
+MDK-ARM/*.uvopt
+MDK-ARM/*.uvproj
+MDK-ARM/*.uvoptx.bak
+MDK-ARM/*.uvprojx.bak
+
+# 注意：*.uvprojx 要保留提交！（不要忽略项目主文件）
+
+# ====================
+# CubeMX 相关
+# ====================
+*.ioc.old
+*.bak
+*.tmp
+*~
+
+# ====================
+# MDK-ARM/.pack/ 下的临时/示例文件（全部忽略）
+# ====================
+MDK-ARM/.pack/
+
+# ====================
+# VS Code（精细化控制）
+# ====================
+.vscode/settings.json
+.vscode/*.code-workspace
+
+# 但保留 launch.json（调试配置可以共享）
+!.vscode/launch.json
+
+# MDK-ARM 下的 .vscode 同理
+MDK-ARM/.vscode/settings.json
+MDK-ARM/.vscode/*.code-workspace
+!MDK-ARM/.vscode/launch.json
+
+# ====================
+# 系统文件
+# ====================
+Thumbs.db
+desktop.ini
+.DS_Store
+.AppleDouble
+.LSOverride
+.*.swp
+.*.swo
+
+资料与工具
