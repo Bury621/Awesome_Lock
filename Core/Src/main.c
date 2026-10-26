@@ -1,4 +1,4 @@
-/* USER CODE BEGIN Header */
+﻿/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "App.h"
 #include "Debug.h"
+#include "app_util.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,16 +77,28 @@ static void MX_TIM4_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 /*
- * 开机打印复位原因，便于定位“自动重启”：
- *   IWDG  -> 主循环超过约 10s 没喂狗（卡死/被中断饿死）
- *   POR   -> 正常上电
- *   PIN   -> 复位脚/下载器复位
- *   BOR   -> 供电跌落
- *   SFTRST-> 软件复位
+ * 寮€鏈烘墦鍗板浣嶅師鍥狅紝渚夸簬瀹氫綅鈥滆嚜鍔ㄩ噸鍚€濓細
+ *   IWDG  -> 涓诲惊鐜秴杩囩害 10s 娌″杺鐙楋紙鍗℃/琚腑鏂タ姝伙級
+ *   POR   -> 姝ｅ父涓婄數
+ *   PIN   -> 澶嶄綅鑴?涓嬭浇鍣ㄥ浣?
+ *   BOR   -> 渚涚數璺岃惤
+ *   SFTRST-> 杞欢澶嶄綅
  */
 static void Report_Reset_Cause(void)
 {
+    volatile AppFaultRecord *record = App_GetFaultRecord();
+
     uart_printf("\r\n=== BOOT ===\r\n");
+
+    if ((record->magic == APP_FAULT_RECORD_MAGIC) &&
+        (record->code_inv == ~record->code))
+    {
+        uart_printf("PREV FAULT code=%lu (1=Hard 2=Mem 3=Bus 4=Usage 5=NMI 6=ErrorHandler)\r\n",
+                    (unsigned long)record->code);
+    }
+    record->magic = 0U;
+    record->code = 0U;
+    record->code_inv = 0U;
 
     if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET)
     {
@@ -144,10 +157,10 @@ int main(void)
 
     /* USER CODE BEGIN SysInit */
 	/*
-	 * 说明：
-	 * 旧版为了绕开“上电中断早于外设初始化”的问题，采用了
-	 * “先初始化 GPIO → 关闭 EXTI → 初始化外设 → 再打开 EXTI”的 hack。
-	 * 新版中断里只投递事件，不再访问任何外设，因此保持 CubeMX 默认顺序即可。
+	 * 璇存槑锛?
+	 * 鏃х増涓轰簡缁曞紑鈥滀笂鐢典腑鏂棭浜庡璁惧垵濮嬪寲鈥濈殑闂锛岄噰鐢ㄤ簡
+	 * 鈥滃厛鍒濆鍖?GPIO 鈫?鍏抽棴 EXTI 鈫?鍒濆鍖栧璁?鈫?鍐嶆墦寮€ EXTI鈥濈殑 hack銆?
+	 * 鏂扮増涓柇閲屽彧鎶曢€掍簨浠讹紝涓嶅啀璁块棶浠讳綍澶栬锛屽洜姝や繚鎸?CubeMX 榛樿椤哄簭鍗冲彲銆?
 	 */
     /* USER CODE END SysInit */
 
@@ -163,7 +176,7 @@ int main(void)
     MX_IWDG_Init();
     MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-	/* 给指纹模块、键盘等外部器件留出上电稳定时间 */
+	/* 缁欐寚绾规ā鍧椼€侀敭鐩樼瓑澶栭儴鍣ㄤ欢鐣欏嚭涓婄數绋冲畾鏃堕棿 */
 	HAL_Delay(100);
 	Report_Reset_Cause();
 	HAL_Delay(200);
@@ -276,10 +289,10 @@ static void MX_IWDG_Init(void)
 
     /* USER CODE END IWDG_Init 1 */
     /*
-     * IWDG 约 10s 超时（LSI 32kHz / 256 / 1250 ≈ 10s）。
-     * 必须大于最长的合法阻塞操作：Sector5（128KB）Flash 擦除最坏约 4s。
-     * 看门狗只在主循环喂，任何任务卡死都会自动复位，而不是像旧版那样
-     * 在 TIM4 中断里喂狗、主循环死了还能“假活”。
+     * IWDG 绾?10s 瓒呮椂锛圠SI 32kHz / 256 / 1250 鈮?10s锛夈€?
+     * 蹇呴』澶т簬鏈€闀跨殑鍚堟硶闃诲鎿嶄綔锛歋ector5锛?28KB锛塅lash 鎿﹂櫎鏈€鍧忕害 4s銆?
+     * 鐪嬮棬鐙楀彧鍦ㄤ富寰幆鍠傦紝浠讳綍浠诲姟鍗℃閮戒細鑷姩澶嶄綅锛岃€屼笉鏄儚鏃х増閭ｆ牱
+     * 鍦?TIM4 涓柇閲屽杺鐙椼€佷富寰幆姝讳簡杩樿兘鈥滃亣娲烩€濄€?
      */
     hiwdg.Instance = IWDG;
     hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
@@ -440,15 +453,15 @@ static void MX_TIM6_Init(void)
 
     /* USER CODE END TIM6_Init 1 */
     /*
-     * TIM6 作为步进电机 1us 时基：
-     * APB1 定时器时钟 84MHz，84MHz / (83 + 1) = 1MHz。
-     * 这样 stepper_motor 里的 step_us 参数就是真实的微秒数，
-     * 不再像旧版那样“1 个计数 = 2us”，导致配置值与实际速度差一倍。
+     * TIM6 浣滀负姝ヨ繘鐢垫満 1us 鏃跺熀锛?
+     * APB1 瀹氭椂鍣ㄦ椂閽?84MHz锛?4MHz / (83 + 1) = 1MHz銆?
+     * 杩欐牱 stepper_motor 閲岀殑 step_us 鍙傛暟灏辨槸鐪熷疄鐨勫井绉掓暟锛?
+     * 涓嶅啀鍍忔棫鐗堥偅鏍封€? 涓鏁?= 2us鈥濓紝瀵艰嚧閰嶇疆鍊间笌瀹為檯閫熷害宸竴鍊嶃€?
      */
     htim6.Instance = TIM6;
-    htim6.Init.Prescaler = 83;
+    htim6.Init.Prescaler = 167;
     htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim6.Init.Period = 499;
+    htim6.Init.Period = 199;
     htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
     if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
     {
@@ -599,8 +612,8 @@ static void MX_GPIO_Init(void)
     GPIO_InitStruct.Pin = GPIO_PIN_0;
     GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
     /*
-     * 人体感应模块未接时 PA0 会悬空，可能产生大量边沿中断。
-     * 加上下拉，空闲时保持低电平，避免 EXTI0 中断风暴拖死主循环。
+     * 浜轰綋鎰熷簲妯″潡鏈帴鏃?PA0 浼氭偓绌猴紝鍙兘浜х敓澶ч噺杈规部涓柇銆?
+     * 鍔犱笂涓嬫媺锛岀┖闂叉椂淇濇寔浣庣數骞筹紝閬垮厤 EXTI0 涓柇椋庢毚鎷栨涓诲惊鐜€?
      */
     GPIO_InitStruct.Pull = GPIO_PULLDOWN;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -613,10 +626,23 @@ static void MX_GPIO_Init(void)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /*Configure GPIO pin : Hall_IRQ_Pin */
+    /*
+     * 闂ㄧ/闇嶅皵鍙仛鏅€氳緭鍏ワ紝涓嶅啀寮€ EXTI銆?
+     * 瀹炴満鎶撳埌鐢垫満杞姩鏃?PE7 鐨?EXTI7 浼氭寔缁Е鍙戯紝EXTI9_5 鎶㈠崰 SysTick锛?
+     * 涓诲惊鐜?鐪嬮棬鐙楄楗挎锛岃〃鐜颁负寮€闂?鍏抽棬鍒颁竴鍗婂崱姝诲苟閲嶅惎銆?
+     * 鐩墠涓氬姟灞傚苟娌℃湁浣跨敤 APP_EVENT_DOOR_SENSE锛屾墍浠ョ洿鎺ュ叧鎺夎繖涓腑鏂簮銆?
+     */
     GPIO_InitStruct.Pin = Hall_IRQ_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(Hall_IRQ_GPIO_Port, &GPIO_InitStruct);
+
+    /* 纭繚 EXTI line7 涓嶄細鍥犱负鍘嗗彶閰嶇疆/璋冭瘯鍣ㄧ姸鎬佺户缁Е鍙?*/
+    EXTI->IMR &= ~(1UL << 7);
+    EXTI->EMR &= ~(1UL << 7);
+    EXTI->RTSR &= ~(1UL << 7);
+    EXTI->FTSR &= ~(1UL << 7);
+    EXTI->PR = (1UL << 7);
 
     /*Configure GPIO pin : FP_IRQ_Pin */
     GPIO_InitStruct.Pin = FP_IRQ_Pin;
@@ -645,12 +671,12 @@ static void MX_GPIO_Init(void)
     HAL_GPIO_Init(KEYBOARD_IRQ_GPIO_Port, &GPIO_InitStruct);
 
     /*
-     * 中断优先级分组已改为 NVIC_PRIORITYGROUP_4（见 stm32f4xx_hal_msp.c）：
-     *   SysTick = 0（最高，保证 HAL 超时计时永远在走）
-     *   TIM6    = 1（电机节拍）
-     *   UART5   = 2（指纹接收）
-     *   EXTI    = 3（按键/指纹触摸/人体感应）
-     * 由于 EXTI 里只投递事件，低优先级也不会影响实时性。
+     * 涓柇浼樺厛绾у垎缁勶細NVIC_PRIORITYGROUP_4锛堣 stm32f4xx_hal_msp.c锛夈€?
+     *   TIM6    = 0锛堢數鏈鸿妭鎷嶆渶楂橈紝閬垮厤琚?1ms tick 鍙嶅鎵撴柇锛?
+     *   SysTick = 1锛堥珮浜?UART5/EXTI锛屼繚璇?tick 鍜?HAL 瓒呮椂涓嶄細琚閮ㄤ腑鏂タ姝伙級
+     *   UART5   = 2锛堟寚绾规帴鏀讹級
+     *   EXTI    = 3锛堟寜閿?鎸囩汗瑙︽懜/浜轰綋鎰熷簲锛?
+     * 鍓嶆彁锛氭墍鏈?ISR 閲岄兘涓嶈皟鐢ㄥ甫 tick 瓒呮椂鐨勯樆濉?HAL 鍑芥暟銆?
      */
     HAL_NVIC_SetPriority(EXTI0_IRQn, 3U, 0U);
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
@@ -671,9 +697,15 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  /* 涓嶈姘镐箙鍏充腑鏂寰幆锛氬浣嶈绯荤粺鎭㈠锛屼覆鍙ｇ暀涓嬫爣璁?*/
+  volatile AppFaultRecord *record = App_GetFaultRecord();
+  record->code = APP_FAULT_ERRORHANDLE;
+  record->code_inv = ~APP_FAULT_ERRORHANDLE;
+  record->magic = APP_FAULT_RECORD_MAGIC;
+  __DSB();
   uart_printf("[ERROR_HANDLER]\r\n");
-  __disable_irq();
+  __DSB();
+  NVIC_SystemReset();
   while (1)
   {
   }

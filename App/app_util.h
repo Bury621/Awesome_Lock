@@ -12,6 +12,35 @@
 /** 把毫秒换算成 HAL tick（HAL_GetTick 固定为 1ms） */
 #define APP_MS_TO_TICKS(ms) ((uint32_t)(ms))
 
+/*
+ * 故障记录：放在 SRAM2 末尾（链接脚本没有使用这段 RAM），
+ * 系统复位（看门狗/软件复位）后内容会保留，方便下次启动打印上次故障类型。
+ * 上电冷启动时内容随机，用 magic 校验。
+ */
+#define APP_FAULT_RECORD_ADDR  0x2001FFF0UL
+#define APP_FAULT_RECORD_MAGIC 0x5A5AA5A5UL
+
+typedef struct
+{
+    volatile uint32_t magic;
+    volatile uint32_t code;
+    volatile uint32_t code_inv;
+} AppFaultRecord;
+
+static inline volatile AppFaultRecord *App_GetFaultRecord(void)
+{
+    return (volatile AppFaultRecord *)APP_FAULT_RECORD_ADDR;
+}
+
+/* 故障码 */
+#define APP_FAULT_NONE        0U
+#define APP_FAULT_HARDFAULT   1U
+#define APP_FAULT_MEMMANAGE   2U
+#define APP_FAULT_BUSFAULT    3U
+#define APP_FAULT_USAGEFAULT  4U
+#define APP_FAULT_NMI         5U
+#define APP_FAULT_ERRORHANDLE 6U
+
 /**
  * @brief 进入临界区（保存并关闭全局中断）
  * @return 进入前的 PRIMASK，用于退出时恢复

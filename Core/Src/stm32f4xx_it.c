@@ -22,6 +22,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_util.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,6 +62,34 @@ extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
 extern UART_HandleTypeDef huart5;
 extern UART_HandleTypeDef huart1;
+
+/*
+ * 故障统一处理：
+ * 先通过调试串口留标记，再主动复位。
+ * 这样“程序卡死”会变成一次可恢复的重启，而不是永久停在 while(1)。
+ */
+static void Fault_Reset(const char *message, uint16_t length, uint32_t fault_code)
+{
+    volatile AppFaultRecord *record = App_GetFaultRecord();
+
+    /* 先记录故障类型，再打印/复位；即使串口没接，下次启动也能看到 */
+    record->code = fault_code;
+    record->code_inv = ~fault_code;
+    record->magic = APP_FAULT_RECORD_MAGIC;
+    __DSB();
+
+    if ((message != NULL) && (length > 0U))
+    {
+        (void)HAL_UART_Transmit(&huart1, (uint8_t *)message, length, 50U);
+    }
+
+    __DSB();
+    NVIC_SystemReset();
+
+    while (1)
+    {
+    }
+}
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -74,8 +103,8 @@ extern UART_HandleTypeDef huart1;
 void NMI_Handler(void)
 {
     /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-
-    /* USER CODE END NonMaskableInt_IRQn 0 */
+    static const char msg[] = "\r\n[NMI]\r\n";
+    Fault_Reset(msg, (uint16_t)(sizeof(msg) - 1U), APP_FAULT_NMI);
     /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
     while (1)
     {
@@ -89,10 +118,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
     /* USER CODE BEGIN HardFault_IRQn 0 */
-    /* 在死循环前用调试串口留一条线索；USART1 未初始化时 HAL 会立即返回 */
     static const char hardfault_msg[] = "\r\n[HARDFAULT]\r\n";
-    (void)HAL_UART_Transmit(&huart1, (uint8_t *)hardfault_msg,
-                            (uint16_t)(sizeof(hardfault_msg) - 1U), 50U);
+    Fault_Reset(hardfault_msg, (uint16_t)(sizeof(hardfault_msg) - 1U), APP_FAULT_HARDFAULT);
     /* USER CODE END HardFault_IRQn 0 */
     while (1)
     {
@@ -107,8 +134,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
     /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-
-    /* USER CODE END MemoryManagement_IRQn 0 */
+    static const char msg[] = "\r\n[MEMFAULT]\r\n";
+    Fault_Reset(msg, (uint16_t)(sizeof(msg) - 1U), APP_FAULT_MEMMANAGE);
     while (1)
     {
         /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
@@ -122,8 +149,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
     /* USER CODE BEGIN BusFault_IRQn 0 */
-
-    /* USER CODE END BusFault_IRQn 0 */
+    static const char msg[] = "\r\n[BUSFAULT]\r\n";
+    Fault_Reset(msg, (uint16_t)(sizeof(msg) - 1U), APP_FAULT_BUSFAULT);
     while (1)
     {
         /* USER CODE BEGIN W1_BusFault_IRQn 0 */
@@ -137,8 +164,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
     /* USER CODE BEGIN UsageFault_IRQn 0 */
-
-    /* USER CODE END UsageFault_IRQn 0 */
+    static const char msg[] = "\r\n[USAGEFAULT]\r\n";
+    Fault_Reset(msg, (uint16_t)(sizeof(msg) - 1U), APP_FAULT_USAGEFAULT);
     while (1)
     {
         /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
@@ -234,8 +261,11 @@ void EXTI9_5_IRQHandler(void)
      * 旧版这里误写成了 Led2_Pin（PA7，输出脚）。
      * 真正的 EXTI7 来源是霍尔/门磁 PE7，必须显式清它的挂起位，
      * 否则会一直进中断（中断风暴），表现为整机卡死。
+     *
+     * 现在 PE7 已改为普通输入、EXTI7 在 MX_GPIO_Init 里关闭，
+     * 业务层也不使用 APP_EVENT_DOOR_SENSE，因此这里不再处理 Hall，
+     * 避免电机转动/门磁抖动时 EXTI9_5 风暴饿死 SysTick。
      */
-    HAL_GPIO_EXTI_IRQHandler(Hall_IRQ_Pin);
     /* USER CODE BEGIN EXTI9_5_IRQn 1 */
 
     /* USER CODE END EXTI9_5_IRQn 1 */

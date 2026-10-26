@@ -6,9 +6,18 @@
 
 extern UART_HandleTypeDef huart1;
 
+#ifndef DEBUG_UART_ENABLE
+#define DEBUG_UART_ENABLE 0
+#endif
+
 void uart_printf(const char *format, ...)
 {
-    char buffer[160];
+#if DEBUG_UART_ENABLE
+    /*
+     * 静态缓冲区：uart_printf 只在主循环/启动阶段调用，不会并发，
+     * 这样可以从本就很小的主栈里省下 160 字节。
+     */
+    static char buffer[160];
     va_list args;
     int len;
 
@@ -18,7 +27,6 @@ void uart_printf(const char *format, ...)
     }
 
     va_start(args, format);
-    /* 使用 vsnprintf 限制长度，避免旧版 vsprintf 在长字符串时踩内存 */
     len = vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
 
@@ -32,6 +40,15 @@ void uart_printf(const char *format, ...)
     }
 
     (void)HAL_UART_Transmit(&huart1, (uint8_t *)buffer, (uint16_t)len, 1000U);
+#else
+    /*
+     * 默认关闭调试串口输出：
+     * 现场没有接 USART1 时，HAL_UART_Transmit 会占用主循环甚至等待 tick；
+     * 电机/指纹路径里任何一条日志都可能把卡死放大。
+     * 需要抓日志时把这里改成 1 重新编译。
+     */
+    (void)format;
+#endif
 }
 
 void print_binary16(uint16_t num)
