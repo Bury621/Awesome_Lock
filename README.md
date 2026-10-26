@@ -302,6 +302,8 @@ Flash Sector 5 @ 0x08020000
 >
 > 如果从旧固件升级：密码存储已从 Sector 3 移到 Sector 5，旧密码不会沿用；首次启动请用默认密码 `1234`，再进管理员菜单修改。
 
+> 用 CubeMX 重新生成代码时：.ioc 已同步 **TIM6=167/199**、**PE7 普通输入**、**Stack=0x2000**、NVIC 8 字段格式；生成后请确认 TICK_INT_PRIORITY=1、DEBUG_UART_ENABLE=0，以及 PE7 没有被重新打开成 EXTI。
+
 # 关键配置
 
 所有可调参数集中在 [`Config/Config.h`](Config/Config.h)：
