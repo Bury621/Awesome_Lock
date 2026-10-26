@@ -1,4 +1,4 @@
-﻿#include "lock_app.h"
+#include "lock_app.h"
 #include "app_util.h"
 #include "ui_views.h"
 #include "Keyboard.h"
@@ -922,7 +922,7 @@ void LockApp_Poll(void)
 
             s_lockout_tick = now;
             remaining = (uint32_t)(((s_lockout_until - now) + 999U) / 1000U);
-            UI_ShowLocked(remaining);
+            UI_UpdateLockedCountdown(remaining);
         }
     }
 

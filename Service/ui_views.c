@@ -15,7 +15,7 @@ static const uint8_t s_cn_new_pwd[]   = {13U, 14U, 15U, 31U, 16U, 17U}; /* 请�
 static const uint8_t s_cn_locked_out[] = {36U, 37U, 38U};              /* 已锁机   */
 
 static const char *const s_menu_labels[] = {
-    "Reset password",
+    "Reset PWD",
     "Register FP",
     "Clear all FP"
 };
@@ -194,6 +194,17 @@ void UI_ShowLocked(uint32_t remaining_seconds)
     LCD_ShowBedImage(40U, 105U);
 
     LCD_Flush();
+}
+
+/*
+ * 锁机倒计时只刷新数字所在的小区域：
+ *   x=40..71, y=78..93（4 位 8x16 数字），四周各留 1px 余量。
+ * 不重画标题、分隔线、Please wait、床图，避免整屏闪烁和慢刷新。
+ */
+void UI_UpdateLockedCountdown(uint32_t remaining_seconds)
+{
+    LCD_Fill(39U, 77U, 72U, 94U, SILVER);
+    LCD_ShowNum(40U, 78U, remaining_seconds, 4U, Font_8x16, RED);
 }
 
 /* -------------------------------------------------------------------------- */

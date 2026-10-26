@@ -21,6 +21,7 @@ void UI_ShowInput(UI_InputMode mode, uint8_t dots);
 void UI_ShowInputDots(uint8_t dots);
 void UI_ShowSuccess(void);
 void UI_ShowLocked(uint32_t remaining_seconds);
+void UI_UpdateLockedCountdown(uint32_t remaining_seconds);
 void UI_ShowMenu(uint8_t selected);
 void UI_ShowEnrollPrompt(void);
 void UI_ShowMessage(const char *line1, const char *line2, uint16_t color);
