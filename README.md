@@ -78,6 +78,8 @@ flowchart TD
 | UART5 | 指纹模块收发，逐字节解析成帧 | 2 |
 | EXTI0 / EXTI9_5 | 人体感应、按键、指纹触摸 | 3 |
 
+> 本工程使用 `NVIC_PRIORITYGROUP_4`：4 位全部是抢占优先级，**子优先级必须为 0**。`.ioc` 里所有 NVIC 行的 subpriority 已清零；否则 CubeMX 会报“优先级分组和优先级冲突”。
+
 关键约束：
 
 - **所有 ISR 都不调用带 tick 超时的阻塞 HAL 函数**；
