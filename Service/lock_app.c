@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* 鐢垫満鏂瑰悜锛氭寜瀹為檯瑁呴厤鏂瑰悜閫夋嫨 */
+/* 电机方向：按实际装配方向选择 */
 #ifdef MOTOR_REVERSE
 #define DOOR_OPEN_DIR   MOTOR_CCW
 #define DOOR_CLOSE_DIR  MOTOR_CW
@@ -54,8 +54,6 @@ static bool     s_open_requested;
 static uint32_t s_door_close_at;
 static uint32_t s_auto_return_at;
 static uint32_t s_motor_deadline;
-/*
- * 鐢垫満杞姩鏈熼棿涓存椂鍏虫帀澶栭儴涓柇婧愩€? * 瀹炴満鎶撳埌鐨勫崱姝?閲嶅惎鍙戠敓鍦ㄧ數鏈鸿浆鍔ㄧ獥鍙ｅ唴锛屼笖浼撮殢 EXTI9_5/UART5 娲诲姩锛? * 寮€闂?鍏抽棬杩?1 绉掑唴涓嶉渶瑕佹寜閿€佹寚绾硅Е鎽稿拰闂ㄧ锛屽厛鍏?NVIC锛? * 閬垮厤浠讳綍杈规部鎶栧姩/涓插彛閿欒鎶婁富寰幆楗挎銆傜數鏈哄仠绋冲悗绔嬪嵆鎭㈠銆? */
 static uint32_t s_light_restore_at;
 
 static bool     s_fp_retry_armed;
@@ -66,7 +64,7 @@ static LockState s_message_return;
 static uint32_t  s_message_deadline;
 
 /* -------------------------------------------------------------------------- */
-/* 鍓嶇疆澹版槑                                                                    */
+/* 对外接口                                                                    */
 /* -------------------------------------------------------------------------- */
 static void enter_main(void);
 static void enter_input(LockState state, UI_InputMode mode);
@@ -81,7 +79,7 @@ static void door_close(void);
 static void on_fp_event(FPC_Op op, FPC_Result result, FGP_Status_Code status);
 
 /* -------------------------------------------------------------------------- */
-/* 瀵嗙爜缂撳啿                                                                    */
+/* 按键处理                                                                    */
 /* -------------------------------------------------------------------------- */
 static void pwd_clear(void)
 {
@@ -121,7 +119,7 @@ static bool is_digit_key(char key)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 鐣岄潰鍒囨崲                                                                    */
+/* 指纹                                                                        */
 /* -------------------------------------------------------------------------- */
 static void enter_main(void)
 {
@@ -188,7 +186,7 @@ static void enter_after_message(void)
     }
 }
 
-/* 鍝簺鐣岄潰鍏佽 5 绉掓棤鎿嶄綔鍚庣唲灞?*/
+/* 哪些界面允许 5 秒无操作后熄屏 */
 static bool state_allows_sleep(void)
 {
     switch (s_state)
@@ -201,15 +199,12 @@ static bool state_allows_sleep(void)
             return true;
 
         default:
-            /* UNLOCKED / LOCKED / 鎸囩汗娉ㄥ唽绛夊緟涓笉鐔勫睆 */
+            /* UNLOCKED / LOCKED / 指纹注册等待中不熄屏 */
             return false;
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/* 闂?/ 鐢垫満                                                                   */
-/* -------------------------------------------------------------------------- */
-/* 璁板綍涓€娆″紑鍏抽棬鐨勫悎鐞嗚秴鏃舵椂闂达紝鐢ㄤ簬鍙戠幇瀹氭椂鍣?涓柇寮傚父 */
+    /* 记录一次开关门的合理超时时间，用于发现定时器/中断异常 */
 static void door_move_started(void)
 {
     uint32_t steps = StepperMotor_AngleToSteps((float)OPEN_DOOR_ANGLE);
@@ -238,7 +233,7 @@ static void door_open(void)
     StepperMotor_RotateAngle(DOOR_OPEN_DIR, (float)OPEN_DOOR_ANGLE, OPEN_DOOR_STEP_US);
     door_move_started();
     uart_printf("MOTOR OPEN t=%lu\r\n", (unsigned long)HAL_GetTick());
-    HAL_GPIO_WritePin(GPIOA, Led2_Pin, GPIO_PIN_RESET); /* 寮€闂ㄦ寚绀虹伅浜?*/
+    HAL_GPIO_WritePin(GPIOA, Led2_Pin, GPIO_PIN_RESET); /* 开门指示灯亮 */
 }
 
 static void door_close(void)
@@ -260,14 +255,14 @@ static void door_close(void)
     s_door_hold = false;
     s_door_open = false;
 
-    HAL_GPIO_WritePin(GPIOA, Led2_Pin, GPIO_PIN_SET); /* 寮€闂ㄦ寚绀虹伅鐏?*/
+    HAL_GPIO_WritePin(GPIOA, Led2_Pin, GPIO_PIN_SET); /* 开门指示灯灭 */
     StepperMotor_RotateAngle(DOOR_CLOSE_DIR, (float)OPEN_DOOR_ANGLE, OPEN_DOOR_STEP_US);
     door_move_started();
     uart_printf("MOTOR CLOSE t=%lu\r\n", (unsigned long)HAL_GetTick());
 }
 
 /* -------------------------------------------------------------------------- */
-/* 瑙ｉ攣 / 閿佸畾                                                                 */
+/* 门 / 电机                                                                   */
 /* -------------------------------------------------------------------------- */
 static void unlock_success(void)
 {
@@ -330,7 +325,7 @@ static void password_failed(LockState return_state)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 鎸囩汗                                                                        */
+/* 界面切换                                                                    */
 /* -------------------------------------------------------------------------- */
 static void fp_touch(void)
 {
@@ -343,7 +338,7 @@ static void fp_touch(void)
 
     if (s_fp_fail >= FGP_MAX_VERIFY)
     {
-        /* 鎸囩汗澶辫触娆℃暟杩囧锛氭殏鏃剁鐢ㄦ寚绾癸紝鏀圭敤瀵嗙爜 */
+        /* 指纹失败次数过多：暂时禁用指纹，改用密码 */
         FPC_SetLight(FPC_LIGHT_RED_CONST);
         s_light_restore_at = now + 600U;
         return;
@@ -357,13 +352,15 @@ static void fp_touch(void)
     if (!FPC_StartVerify())
     {
         /*
-         * 鍒氬彂杩囩伅鍏夋寚浠ゆ椂 FPC 浼氭嫆缁濈珛鍗冲惎鍔紙閬垮厤 ACK 涓插寘锛夈€?         * 鐭殏寤惰繜鍚庤嚜鍔ㄩ噸璇曚竴娆★紝涓嶄涪鐢ㄦ埛鐨勮Е鎽搞€?         */
+         * 刚发过灯光指令时 FPC 会拒绝立即启动（避免 ACK 串包）。
+         * 短暂延迟后自动重试一次，不丢用户的触摸。
+         */
         s_fp_retry_armed = true;
         s_fp_retry_at = now + 200U;
     }
     else
     {
-        /* 鍙湁鐪熸鍙戣捣浜嗘寚绾归獙璇侊紝鎵嶇畻涓€娆♀€滅敤鎴锋搷浣溾€?*/
+/* 只有真正发起了指纹验证，才算一次“用户操作” */
         s_last_activity = now;
     }
 }
@@ -377,7 +374,7 @@ static void on_fp_event(FPC_Op op, FPC_Result result, FGP_Status_Code status)
 
     if (op == FPC_OP_VERIFY)
     {
-        /* 鐢ㄦ埛鍙兘宸茬粡杩斿洖涓荤晫闈?杩涘叆绠＄悊鍛樼晫闈紝姝ゆ椂缁撴灉浣滃簾 */
+        /* 用户可能已经返回主界面/进入管理员界面，此时结果作废 */
         if ((s_state != LOCK_STATE_MAIN) && (s_state != LOCK_STATE_INPUT))
         {
             return;
@@ -401,7 +398,7 @@ static void on_fp_event(FPC_Op op, FPC_Result result, FGP_Status_Code status)
         }
         else
         {
-            /* 瓒呮椂/閫氫俊澶辫触锛氫笉鎯╃綒鐢ㄦ埛锛屼繚鎸佸綋鍓嶇晫闈?*/
+            /* 超时/通信失败：不惩罚用户，保持当前界??*/
         }
         return;
     }
@@ -455,7 +452,7 @@ static void on_fp_event(FPC_Op op, FPC_Result result, FGP_Status_Code status)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 鎸夐敭澶勭悊                                                                    */
+/* 密码缓冲                                                                    */
 /* -------------------------------------------------------------------------- */
 static void admin_menu_select(void)
 {
@@ -642,13 +639,15 @@ static void handle_key(char key)
             break;
 
         case LOCK_STATE_ADMIN_ENROLL:
-            /*
-             * 娉ㄥ唽杩囩▼涓笉鎺ュ彈杩斿洖閿細涓€鏃﹀彇娑堬紝妯″潡涔嬪悗杩熷埌鐨勫簲绛斿寘
-             * 鍙兘琚笅涓€娆￠獙璇佽鍒わ紙鍗忚纭鍖呬笉甯︽寚浠ゅ彿锛夈€?             * 鏈€闀跨瓑寰?FGP_ENROLL_TIMEOUT_MS锛?0s锛夊悗浼氳嚜鍔ㄨ秴鏃惰繑鍥炪€?             */
+            /* 同理，清空指纹库期间等待结果 */
             break;
 
         case LOCK_STATE_ADMIN_FP_BUSY:
-            /* 鍚岀悊锛屾竻绌烘寚绾瑰簱鏈熼棿绛夊緟缁撴灉 */
+            /*
+             * 注册过程中不接受返回键：一旦取消，模块之后迟到的应答包
+             * 可能被下一次验证误判（协议确认包不带指令号）。
+             * 最长等待 FGP_ENROLL_TIMEOUT_MS（20s）后会自动超时返回。
+             */
             break;
 
         case LOCK_STATE_UNLOCKED:
@@ -675,7 +674,7 @@ static void handle_key(char key)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 瀵瑰鎺ュ彛                                                                    */
+/* 前置声明                                                                    */
 /* -------------------------------------------------------------------------- */
 void LockApp_Init(void)
 {
@@ -730,9 +729,10 @@ void LockApp_HandleEvent(const AppEvent *event)
     if (s_sleeping)
     {
         /*
-         * 鐔勫睆鐘舵€佷笅锛?         *   鎸夐敭 -> 鍙敜閱掞紝骞惰涓€娆?I2C 娓呮帀鎸夐敭妯″潡鐨勯攣瀛橈紱
-         *   浜轰綋鎰熷簲 -> 鍙敜閱掞紱
-         *   鎸囩汗瑙︽懜 -> 鍞ら啋鍚庣户缁蛋鎸囩汗楠岃瘉娴佺▼锛屼笉鐢ㄥ啀鎸夌浜屾銆?         */
+         * 熄屏状态下，第一个事件只负责唤醒，不参与输入，避免误触。
+         * 按键事件需要真正读一次 I2C：按键模块的 IRQ 可能是“锁存到读取为止”，
+         * 不读的话它不会释放，下一次按键就不会再产生下降沿。
+         */
         if (event->type == APP_EVENT_KEYPAD)
         {
             uint16_t discarded_key;
@@ -752,7 +752,7 @@ void LockApp_HandleEvent(const AppEvent *event)
             {
                 return;
             }
-            /* 鎸囩汗瑙︽懜锛氬敜閱掑悗缁х画鎵ц涓嬮潰鐨?fp_touch() */
+            /* 超时/通信失败：不惩罚用户，保持当前界面 */
         }
     }
 
@@ -760,7 +760,10 @@ void LockApp_HandleEvent(const AppEvent *event)
     {
         case APP_EVENT_KEYPAD:
             /*
-             * 杩欓噷涓嶅埛鏂?s_last_activity锛?             * 鍙湁鐪熸璇诲埌鏈夋晥閿€硷紙LockApp_Poll 閲岋級鎵嶇畻鐢ㄦ埛鎿嶄綔锛?             * 闃叉閿洏 IRQ 鍙楀共鎵版椂涓€鐩存妸浼戠湢璁℃椂娓呴浂銆?             */
+             * 这里不刷新 s_last_activity：
+             * 只有真正读到有效键值（LockApp_Poll 里）才算用户操作，
+             * 防止键盘 IRQ 受干扰时一直把休眠计时清零。
+             */
             if (!s_keypad_pending)
             {
                 s_keypad_pending = true;
@@ -769,13 +772,13 @@ void LockApp_HandleEvent(const AppEvent *event)
             break;
 
         case APP_EVENT_FINGERPRINT:
-            /* 灞忓箷浜潃鏃舵寜鎸囩汗锛氶噸鏂拌鏃?5 绉?*/
+/* 屏幕亮着时按指纹：重新计时 5 秒 */
             s_last_activity = now;
             fp_touch();
             break;
 
         case APP_EVENT_BODY:
-            /* 浜洪潬杩戯細灞忓箷浜潃鏃堕噸鏂拌鏃?5 绉掞紱鐔勫睆鏃跺凡鍦ㄤ笂闈㈠敜閱?*/
+        /* 只有真正发起了指纹验证，才算一次“用户操作” */
             s_last_activity = now;
             break;
 
@@ -789,7 +792,7 @@ void LockApp_Poll(void)
 {
     uint32_t now = HAL_GetTick();
 
-    /* 1. 鎸夐敭鍘绘姈鍚庤鍙栵紙I2C 鍙湪涓诲惊鐜噷璁块棶锛?*/
+    /* 1. 按键去抖后读取（I2C 只在主循环里访问） */
     if (s_keypad_pending && App_TimeReached(s_keypad_due))
     {
         uint16_t raw_key = 0U;
@@ -808,13 +811,13 @@ void LockApp_Poll(void)
         }
         else
         {
-            /* 璇诲け璐ユ椂鐭殏閲嶈瘯锛屼笉闃诲涓诲惊鐜?*/
+            /* 读失败时短暂重试，不阻塞主循环 */
             s_keypad_pending = true;
             s_keypad_due = now + 50U;
         }
     }
 
-    /* 2. 鎸囩汗楠岃瘉寤惰繜閲嶈瘯锛堝垰鍙戣繃鐏厜鎸囦护鏃朵細鐭殏鎷掔粷鍚姩锛?*/
+    /* 2. 指纹验证延迟重试（刚发过灯光指令时会短暂拒绝启动） */
     if (s_fp_retry_armed && App_TimeReached(s_fp_retry_at))
     {
         s_fp_retry_armed = false;
@@ -828,7 +831,7 @@ void LockApp_Poll(void)
         }
     }
 
-    /* 3. 鎸囩汗鐏仮澶?*/
+    /* 3. 指纹灯恢复 */
     if ((s_light_restore_at != 0U) && App_TimeReached(s_light_restore_at))
     {
         s_light_restore_at = 0U;
@@ -839,7 +842,7 @@ void LockApp_Poll(void)
         }
     }
 
-    /* 4. 鐢垫満鎺掗槦鍔ㄤ綔 */
+    /* 4. 电机排队动作 */
     if (s_open_requested && !StepperMotor_IsRunning())
     {
         s_open_requested = false;
@@ -851,7 +854,7 @@ void LockApp_Poll(void)
         door_close();
     }
 
-    /* 5. 鐢垫満杩愯瓒呮椂淇濇姢锛氭甯镐竴娆″紑鍏抽棬绾?1.2~1.5 绉掞紝瓒呰繃鍚堢悊涓婇檺寮哄埗鍋滄 */
+/* 5. 电机运行超时保护：正常一次开关门约 1.2~1.5 秒，超过合理上限强制停止 */
     if (StepperMotor_IsRunning())
     {
         if ((s_motor_deadline != 0U) && App_TimeReached(s_motor_deadline))
@@ -867,9 +870,8 @@ void LockApp_Poll(void)
         s_motor_deadline = 0U;
     }
 
-    /* 鐢垫満鍋滅ǔ鍚庢仮澶嶅閮ㄤ腑鏂?*/
 
-    /* 6. 寮€闂ㄥ悗淇濇寔鎵煩锛岀洿鍒板叧闂?*/
+    /* 5. 开门后保持扭矩，直到关门 */
     if (s_door_open && !s_close_requested && !s_door_hold && !StepperMotor_IsRunning())
     {
         StepperMotor_HoldPosition();
@@ -878,7 +880,7 @@ void LockApp_Poll(void)
         HAL_GPIO_WritePin(GPIOA, Led2_Pin, GPIO_PIN_RESET);
     }
 
-    /* 7. 寮€闂ㄨ嚜鍔ㄥ叧闂?/ 鑷姩杩斿洖涓荤晫闈?*/
+    /* 6. 开门自动关门 / 自动返回主界面 */
     if (s_state == LOCK_STATE_UNLOCKED)
     {
         if ((s_door_close_at != 0U) && App_TimeReached(s_door_close_at))
@@ -896,19 +898,19 @@ void LockApp_Poll(void)
             }
             else
             {
-                /* 绛夐棬瀹屽叏鍏冲ソ鍐嶈繑鍥烇紝閬垮厤鐣岄潰鍜岀數鏈虹姸鎬佷笉涓€鑷?*/
+                /* 等门完全关好再返回，避免界面和电机状态不一致 */
                 s_auto_return_at = now + 200U;
             }
         }
     }
 
-    /* 7. 鎻愮ず鐣岄潰鑷姩杩斿洖 */
+    /* 7. 提示界面自动返回 */
     if ((s_state == LOCK_STATE_MESSAGE) && App_TimeReached(s_message_deadline))
     {
         enter_after_message();
     }
 
-    /* 8. 閿佸畾鍊掕鏃讹紙闈為樆濉烇級 */
+    /* 8. 锁定倒计时（非阻塞） */
     if (s_state == LOCK_STATE_LOCKED)
     {
         if (App_TimeReached(s_lockout_until))
@@ -926,11 +928,11 @@ void LockApp_Poll(void)
         }
     }
 
-    /* 9. 鏃犳搷浣滅唲灞忥細涓荤晫闈?瀵嗙爜杈撳叆/绠＄悊鍛樼晫闈㈤兘閫傜敤 */
+    /* 9. 无操作熄屏：主界面/密码输入/管理员界面都适用 */
     if (!s_sleeping && state_allows_sleep() &&
         App_TimeReached(s_last_activity + SLEEPING_TIME_MS))
     {
-        /* 浠庡瘑鐮?绠＄悊鍛樼晫闈㈢唲灞忔椂锛岄『鎵嬪洖鍒颁富鐣岄潰锛岄伩鍏嶅崐鎴緭鍏ョ暀鍦ㄥ睆骞曚笂 */
+        /* 从密码/管理员界面熄屏时，顺手回到主界面，避免半截输入留在屏幕上 */
         if (s_state != LOCK_STATE_MAIN)
         {
             enter_main();
