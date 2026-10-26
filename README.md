@@ -58,14 +58,14 @@
 
 ```mermaid
 flowchart TD
-    A[上电 / 复位] --> B[HAL_Init + 时钟 + 外设初始化]
-    B --> C[App_Init: 事件队列 / 电机 / 键盘 / LCD / Flash / 指纹]
-    C --> D[while 1]
-    D --> E[App_Running]
-    E --> F[处理事件队列]
-    F --> G[FPC_Poll: 指纹帧/超时/灯光]
-    G --> H[LockApp_Poll: 按键/密码/菜单/开关门/锁定/休眠]
-    H --> I[刷新 IWDG]
+    A["上电或复位"] --> B["HAL_Init 时钟 外设初始化"]
+    B --> C["App_Init 事件队列 电机 键盘 LCD Flash 指纹"]
+    C --> D["while 1"]
+    D --> E["App_Running"]
+    E --> F["处理事件队列"]
+    F --> G["FPC_Poll 指纹帧 超时 灯光"]
+    G --> H["LockApp_Poll 按键 密码 菜单 开关门 锁定 休眠"]
+    H --> I["刷新 IWDG"]
     I --> D
 ```
 
@@ -95,22 +95,22 @@ stateDiagram-v2
     [*] --> MAIN
     MAIN --> INPUT: 数字键
     MAIN --> ADMIN_CHECK: A
-    INPUT --> UNLOCKED: "# 且密码正确"
+    INPUT --> UNLOCKED: 确认键且密码正确
     INPUT --> MESSAGE: 密码错误
     INPUT --> MAIN: D
-    ADMIN_CHECK --> ADMIN_MENU: "# 且管理员密码正确"
+    ADMIN_CHECK --> ADMIN_MENU: 确认键且管理员密码正确
     ADMIN_CHECK --> MESSAGE: 密码错误
     ADMIN_CHECK --> MAIN: D
     ADMIN_MENU --> ADMIN_NEW_PWD: C 选择 Reset PWD
     ADMIN_MENU --> ADMIN_ENROLL: C 选择 Register FP
     ADMIN_MENU --> ADMIN_FP_BUSY: C 选择 Clear all FP
     ADMIN_MENU --> MAIN: D
-    ADMIN_NEW_PWD --> MESSAGE: "# 保存"
+    ADMIN_NEW_PWD --> MESSAGE: 确认键保存
     ADMIN_NEW_PWD --> ADMIN_MENU: D
     ADMIN_ENROLL --> MESSAGE: 指纹录入结果
     ADMIN_FP_BUSY --> MESSAGE: 清空结果
     UNLOCKED --> MAIN: D 或自动返回
-    MESSAGE --> MAIN: 超时 / D
+    MESSAGE --> MAIN: 超时或按 D
     LOCKED --> MAIN: 倒计时结束
 ```
 
@@ -153,20 +153,20 @@ stateDiagram-v2
 sequenceDiagram
     participant U as 用户
     participant EXTI as EXTI8
-    participant Main as 主循环
+    participant App as 主循环
     participant FPC as 指纹模块
     participant Motor as 电机
 
     U->>EXTI: 手指触摸
-    EXTI->>Main: APP_EVENT_FINGERPRINT
-    Main->>FPC: FPC_StartVerify()
-    FPC-->>Main: UART5 接收帧
-    Main->>Main: FPC_Poll() 解析/校验
+    EXTI->>App: APP_EVENT_FINGERPRINT
+    App->>FPC: FPC_StartVerify
+    FPC-->>App: UART5 接收帧
+    App->>App: FPC_Poll 解析校验
     alt 匹配成功
-        Main->>Main: unlock_success()
-        Main->>Motor: door_open()
+        App->>App: unlock_success
+        App->>Motor: door_open
     else 匹配失败
-        Main->>Main: 失败次数 +1，红灯 800ms
+        App->>App: 失败次数加1 红灯 800ms
     end
 ```
 
