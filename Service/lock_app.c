@@ -118,6 +118,17 @@ static bool is_digit_key(char key)
     return (key >= '0') && (key <= '9');
 }
 
+/*
+ * 兼容不同批次 4x4 键盘的丝印/扫描顺序：
+ * 标准键盘是 '*' 退格，但部分键盘把 A/B/C 也印成退格/功能键，
+ * 密码输入状态下把 A/B/C 一并当作退格，避免按了没反应。
+ * 管理员菜单里 A/B/C 仍分别用于上移/下移/选择。
+ */
+static bool is_backspace_key(char key)
+{
+    return (key == '*') || (key == 'A') || (key == 'B') || (key == 'C');
+}
+
 /* -------------------------------------------------------------------------- */
 /* 指纹                                                                        */
 /* -------------------------------------------------------------------------- */
@@ -514,7 +525,7 @@ static void handle_key(char key)
                     UI_ShowInputDots(s_pwd_len);
                 }
             }
-            else if (key == '*')
+            else if (is_backspace_key(key))
             {
                 pwd_pop();
                 UI_ShowInputDots(s_pwd_len);
@@ -547,7 +558,7 @@ static void handle_key(char key)
                     UI_ShowInputDots(s_pwd_len);
                 }
             }
-            else if (key == '*')
+            else if (is_backspace_key(key))
             {
                 pwd_pop();
                 UI_ShowInputDots(s_pwd_len);
@@ -581,7 +592,7 @@ static void handle_key(char key)
                     UI_ShowInputDots(s_pwd_len);
                 }
             }
-            else if (key == '*')
+            else if (is_backspace_key(key))
             {
                 pwd_pop();
                 UI_ShowInputDots(s_pwd_len);
